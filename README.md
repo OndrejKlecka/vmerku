@@ -8,10 +8,10 @@ letácích kamenných řetězců. Implementace podle `v-merku-spec.md`.
 | Vrstva | Volba | Proč |
 | --- | --- | --- |
 | Web | **Next.js 16 (App Router) + React 19, TypeScript** | UI i backend v jednom projektu a jednom jazyce. Serverové komponenty čtou z DB přímo, takže mezi obrazovkou a daty není žádné API navíc. Responzivní web pokrývá i mobil, jak zadání předpokládá. |
-| Data | **SQLite přes better-sqlite3 + Drizzle ORM** | Jeden uživatel, desítky produktů, tisíce řádků historie – databázový server by tu byl režie navíc. SQLite je jeden soubor, jde zazálohovat kopií. Drizzle dává typové schéma a verzované migrace bez generování klienta. |
+| Data | **SQLite přes Drizzle ORM; na Cloudflare D1** | Jeden uživatel, desítky produktů, tisíce řádků historie – databázový server by tu byl režie navíc. Lokálně je to jeden soubor (better-sqlite3), na Cloudflare D1, což je taky SQLite. Schéma i dotazy jsou stejné, mění se jen driver. |
 | Scraping | **fetch + cheerio (HTML), pdfjs-dist (PDF)** | Letáky jsou statické PDF a Rohlík odpovídá JSONem – na nic z toho není potřeba headless prohlížeč. |
 | OCR | **externí příkaz (volitelně)** | Letáky bez textové vrstvy vyžadují OCR. Tesseract se do appky nebundluje; volá se přes `OCR_COMMAND`, takže se dá zapnout, až bude potřeba. |
-| Plánovač | **node-cron v samostatném procesu** | Kontroly běží mimo web, takže restart nebo deploy webu nerozhodí rozdělanou kontrolu. |
+| Plánovač | **node-cron, na Cloudflare Workers Cron Triggers** | Kontroly běží mimo web, takže restart nebo deploy webu nerozhodí rozdělanou kontrolu. Na Cloudflare kontejner usíná, takže ho budí cron ve Workeru. |
 | E-mail | **nodemailer (SMTP)** | Bez vendor locku; bez konfigurace SMTP se zprávy jen vypíšou do konzole, takže appka jde zkoušet hned. |
 | Graf | **Recharts** | Čárový graf s přepínačem rozsahu, bez vlastního kreslení SVG. |
 
@@ -37,13 +37,63 @@ npm run worker            # e-shopy 6:10 denně, letáky 7:30 ve středu a v sob
 npm run check             # jednorázová kontrola teď (nebo: npm run check leaflet)
 ```
 
-## Nasazení
+## Nasazení na Cloudflare
 
-Nejjednodušší cesta je Render: v prohlížeči zvol **New > Blueprint**, ukaž na
-tenhle repozitář a zbytek si přečte z `render.yaml`. Build jede z Dockerfilu,
-databáze leží na disku `/data` a plánovač běží uvnitř appky
-(`SCHEDULER_IN_PROCESS=1`), protože jeden kontejner umí připojit jen jeden disk.
-Doménu pak stačí nasměrovat přes Cloudflare na adresu, kterou Render přidělí.
+Appka běží v kontejneru (Cloudflare Containers) a před ním sedí Worker
+(`worker/index.ts`). Worker dělá dvě věci, které kontejner sám neumí:
+
+- **Databáze.** Disk kontejneru je pomíjivý — po uspání se vrací čistý —
+  takže data leží v **D1**. Na bindingy se ale dá sáhnout jen z Workeru,
+  proto appka posílá SQL jako HTTP na `http://db.internal/query` a Worker ho
+  vykoná (`outboundByHost` ve Workeru, `src/db/connect.ts` v appce).
+- **Plánovač.** Kontejner po nečinnosti usne, takže node-cron uvnitř by se
+  nikdy nespustil. Budí ho **Workers Cron Triggers**, které zavolají
+  `POST /api/check` se sdíleným tajemstvím v hlavičce `x-check-token`.
+
+Časy v `triggers.crons` jsou v UTC: `10 4 * * *` pro e-shopy a
+`30 5 * * 3,6` pro letáky, tedy v létě 6:10 a 7:30 pražského času, v zimě
+o hodinu dřív.
+
+### Jednorázové nastavení
+
+1. **Databáze.** `wrangler d1 create vmerku` a vypsané `database_id` doplň do
+   `wrangler.jsonc`.
+2. **Tajemství.** V dashboardu Cloudflare (Workers & Pages → vmerku →
+   Settings → Variables and Secrets) nastav `CHECK_TOKEN` (libovolný náhodný
+   řetězec) a SMTP údaje: `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`,
+   `SMTP_FROM`. Worker je předá do kontejneru.
+3. **`APP_URL`** ve `vars` ve `wrangler.jsonc` přepiš na svou doménu — používá
+   se v odkazech v e-mailech.
+4. **Doména.** Workers & Pages → vmerku → Settings → Domains & Routes.
+
+### Nasazování bez Node na vlastním počítači
+
+Nasazuje GitHub Actions (`.github/workflows/deploy.yml`) při každém commitu do
+`main`, takže na vlastním počítači není potřeba nic instalovat. Stačí jednou
+přidat v repozitáři (Settings → Secrets and variables → Actions) tajemství
+`CLOUDFLARE_API_TOKEN` a `CLOUDFLARE_ACCOUNT_ID`. Workflow zkontroluje typy,
+pustí testy, zavede schéma do D1 a nasadí Worker i kontejner.
+
+Lokálně to jde taky: `npm run cf:migrate` a `npm run cf:deploy` (vyžaduje
+Docker, wrangler z něj staví obraz kontejneru).
+
+### Cena
+
+Plán Workers Paid ($5/měsíc) zahrnuje 25 GiB-hodin paměti, 200 GB-hodin disku
+a 375 vCPU-minut. Instance `basic` (1 GiB paměti, 4 GB disku) při pár
+kontrolách denně spotřebuje kolem dvou hodin běhu měsíčně, takže se do
+přídělů vejde. Kdyby kontejner vůbec neusínal, vyjde to i s přeplatky asi na
+$12 měsíčně.
+
+## Nasazení jinam
+
+Appka umí i obyčejný Node hosting se SQLite souborem — když není nastavená
+`D1_PROXY_URL`, `src/db/connect.ts` sáhne po better-sqlite3.
+
+Na Renderu zvol v prohlížeči **New > Blueprint**, ukaž na tenhle repozitář a
+zbytek si přečte z `render.yaml`. Build jede z Dockerfilu, databáze leží na
+disku `/data` a plánovač běží uvnitř appky (`SCHEDULER_IN_PROCESS=1`), protože
+jeden kontejner umí připojit jen jeden disk.
 
 Na vlastním serveru s Dockerem:
 
@@ -57,12 +107,6 @@ docker compose exec web npm run db:seed
 Web běží na portu 3000, plánovač jako druhý kontejner nad stejnou databází.
 Historie cen leží ve svazku `data`, takže přežije redeploy.
 
-Pozn. k hostingu: appka potřebuje běžný Node runtime s diskem a trvale běžícím
-procesem. Cloudflare Workers a podobné edge runtimy nestačí — `better-sqlite3`
-je nativní modul, plánovač je dlouhoběžící proces a parsování velkého letáku se
-nevejde do limitu paměti. Doménu přes Cloudflare směrovat lze, jen na něm nemá
-běžet samotná appka.
-
 ## Struktura
 
 ```
@@ -75,7 +119,10 @@ src/lib/notify.ts         skládání a odesílání e-mailů
 src/app/                  Přehled, detail produktu, Přidat produkt, Nastavení
 scripts/                  worker, jednorázová kontrola, seed, ukázková data,
                           dump-leaflet.ts (diagnostika parsování letáku)
-tests/                    testy párování, parsování letáku a insightů
+src/db/connect.ts         volba driveru: SQLite soubor, nebo D1 přes Worker
+worker/index.ts           Worker před kontejnerem: most k D1 a cron triggery
+wrangler.jsonc            konfigurace nasazení na Cloudflare
+tests/                    testy párování, parsování letáku, insightů a D1
 Dockerfile, compose.yaml  nasazení (web + plánovač nad sdílenou databází)
 ```
 

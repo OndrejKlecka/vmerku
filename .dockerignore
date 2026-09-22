@@ -5,3 +5,6 @@ data
 .env
 *.md
 tests
+worker
+wrangler.jsonc
+.github

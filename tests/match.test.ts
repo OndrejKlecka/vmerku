@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import { extractQuantity, normalize, rankCandidates, similarity } from "../src/lib/match";
+import { headerSafe, USER_AGENT } from "../src/lib/scrapers/types";
 
 describe("normalize", () => {
   it("odstraní diakritiku a sjednotí jednotky", () => {
@@ -69,5 +70,17 @@ describe("rankCandidates", () => {
   it("nevrátí nic, když v nabídce nic podobného není", () => {
     const ranked = rankCandidates("Káva Tchibo Family 250 g", leaflet, (i) => i.name);
     assert.equal(ranked.length, 0);
+  });
+});
+
+describe("headerSafe", () => {
+  it("zbaví User-Agent diakritiky, jinak by fetch odmítl hlavičku", () => {
+    const value = headerSafe("osobní hlídač cen");
+    assert.equal(value, "osobni hlidac cen");
+    assert.ok([...value].every((ch) => ch.charCodeAt(0) < 256));
+  });
+
+  it("výchozí User-Agent projde do hlavičky", () => {
+    assert.doesNotThrow(() => new Headers({ "user-agent": USER_AGENT }));
   });
 });

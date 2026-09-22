@@ -1,0 +1,50 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "vmerku",
+  "main": "worker/index.ts",
+  "compatibility_date": "2026-09-01",
+  "compatibility_flags": ["nodejs_compat"],
+
+  // Appka běží v kontejneru; Worker je jen vrátný a plánovač.
+  "containers": [
+    {
+      "class_name": "VmerkuContainer",
+      "image": "./Dockerfile",
+      // `basic` = 1 GiB paměti a 4 GB disku. Menší `dev` (256 MiB) na
+      // rozebrání letáku nestačí.
+      "instance_type": "basic",
+      // Jeden uživatel, jedna historie cen, jedna instance.
+      "max_instances": 1
+    }
+  ],
+
+  "durable_objects": {
+    "bindings": [{ "name": "HLIDAC", "class_name": "VmerkuContainer" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["VmerkuContainer"] }],
+
+  // Disk kontejneru je pomíjivý, takže data leží v D1.
+  // `database_id` doplň podle výpisu `wrangler d1 create vmerku`.
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "vmerku",
+      "database_id": "DOPLN_ID_Z_WRANGLER_D1_CREATE",
+      // drizzle-kit sem generuje SQL; wrangler bere jen `*.sql`, podsložku
+      // `meta/` ignoruje, takže obě nástroje žijí ve stejné složce.
+      "migrations_dir": "drizzle"
+    }
+  ],
+
+  // Časy jsou v UTC. V létě to vychází na 6:10 a 7:30 pražského času,
+  // v zimě o hodinu dřív – kontrolám to nevadí.
+  "triggers": {
+    "crons": ["10 4 * * *", "30 5 * * 3,6"]
+  },
+
+  "vars": {
+    "APP_URL": "https://vmerku.example.com"
+  },
+
+  "observability": { "enabled": true }
+}

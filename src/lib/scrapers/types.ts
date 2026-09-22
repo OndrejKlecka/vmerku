@@ -28,6 +28,17 @@ export interface Scraper {
   search?(store: Store, query: string): Promise<ScrapedItem[]>;
 }
 
-export const USER_AGENT =
-  process.env.SCRAPER_USER_AGENT ??
-  "Mozilla/5.0 (compatible; v-merku/0.1; osobní hlídač cen)";
+/**
+ * HTTP hlavička unese jen znaky do 255, takže „hlídač“ v User-Agentu shodí
+ * celý požadavek na Rohlík. Diakritiku proto ze jména shazujeme.
+ */
+export function headerSafe(value: string): string {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^\x20-\x7e]/g, "");
+}
+
+export const USER_AGENT = headerSafe(
+  process.env.SCRAPER_USER_AGENT ?? "Mozilla/5.0 (compatible; v-merku/0.1; osobni hlidac cen)",
+);
