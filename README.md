@@ -56,26 +56,42 @@ o hodinu dřív.
 
 ### Jednorázové nastavení
 
-1. **Databáze.** `wrangler d1 create vmerku` a vypsané `database_id` doplň do
-   `wrangler.jsonc`.
-2. **Tajemství.** V dashboardu Cloudflare (Workers & Pages → vmerku →
-   Settings → Variables and Secrets) nastav `CHECK_TOKEN` (libovolný náhodný
-   řetězec) a SMTP údaje: `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`,
-   `SMTP_FROM`. Worker je předá do kontejneru.
-3. **`APP_URL`** ve `vars` ve `wrangler.jsonc` přepiš na svou doménu — používá
+1. **Databáze.** V dashboardu Cloudflare → Storage & Databases → D1 → Create
+   database, jméno `vmerku`. Zkopíruj Database ID do `wrangler.jsonc`.
+2. **Schéma.** Ve stejném dashboardu má databáze záložku Console. Vlož do ní
+   obsah `drizzle/0000_striped_taskmaster.sql` a spusť. (Kdo má po ruce Node,
+   udělá totéž přes `npm run cf:migrate`.)
+3. **Tajemství.** Workers & Pages → vmerku → Settings → Variables and Secrets:
+   `CHECK_TOKEN` (libovolný náhodný řetězec) a SMTP údaje `SMTP_HOST`,
+   `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM`. Worker je předá do
+   kontejneru.
+4. **`APP_URL`** ve `vars` ve `wrangler.jsonc` přepiš na svou doménu — používá
    se v odkazech v e-mailech.
-4. **Doména.** Workers & Pages → vmerku → Settings → Domains & Routes.
+5. **Doména.** Workers & Pages → vmerku → Settings → Domains & Routes.
 
 ### Nasazování bez Node na vlastním počítači
 
-Nasazuje GitHub Actions (`.github/workflows/deploy.yml`) při každém commitu do
-`main`, takže na vlastním počítači není potřeba nic instalovat. Stačí jednou
-přidat v repozitáři (Settings → Secrets and variables → Actions) tajemství
-`CLOUDFLARE_API_TOKEN` a `CLOUDFLARE_ACCOUNT_ID`. Workflow zkontroluje typy,
-pustí testy, zavede schéma do D1 a nasadí Worker i kontejner.
+Nasazuje **Cloudflare Workers Builds** přímo z repozitáře, takže na vlastním
+počítači není potřeba nic instalovat. V nastavení workeru (Settings → Build):
 
-Lokálně to jde taky: `npm run cf:migrate` a `npm run cf:deploy` (vyžaduje
-Docker, wrangler z něj staví obraz kontejneru).
+- **Production branch** musí být ta větev, ze které chceš nasazovat. Je to
+  důležité: na jiných než produkční větvi Workers Builds jen nahraje kód
+  workeru (`wrangler versions upload`) a **obraz kontejneru vůbec nepostaví**.
+- **Build command:** `npm run typecheck`. Samotný `next build` tady nemá co
+  dělat, appku si staví Dockerfile uvnitř obrazu. Testy sem nepatří —
+  prostředí Workers Builds nepřekládá nativní moduly, takže by testy nad
+  better-sqlite3 spadly; od toho je GitHub Actions.
+- **Deploy command:** `npx wrangler deploy` (výchozí).
+
+Pozor, `npx wrangler deploy` se chová podle `wrangler.jsonc`. Když ho ve větvi
+nenajde, spustí místo toho průvodce, který projekt překope na OpenNext a
+nasadí appku jako čistý Worker — tedy přesně to, co kvůli parsování PDF
+nefunguje. Když deploy skončí chybou o `WORKER_SELF_REFERENCE`, staví se
+větev bez `wrangler.jsonc`.
+
+Kdo má Node a Docker, nasadí i z příkazové řádky: `npm run cf:migrate` a
+`npm run cf:deploy`. GitHub Actions (`.github/workflows/kontrola.yml`) jen
+kontroluje typy a pouští testy, nenasazuje.
 
 ### Cena
 
