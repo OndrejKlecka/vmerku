@@ -6,6 +6,7 @@
  */
 import { and, desc, eq, gte, inArray } from "drizzle-orm";
 
+import { chunksForInsert } from "@/db/chunks";
 import { type Db, schema } from "@/db/connect";
 import type { Store } from "@/db/schema";
 import { rangeStart } from "./insights";
@@ -144,22 +145,26 @@ async function replaceStoreItems(
   now: Date,
 ): Promise<void> {
   await db.delete(storeItems).where(eq(storeItems.storeId, storeId)).run();
-  // Vkládáme po dávkách; snapshot obchodu se stejně při každé kontrole přepíše,
-  // takže případné přerušení uprostřed nic trvalého nepoškodí.
-  await db.insert(storeItems).values(
-    items.map((item) => ({
-      storeId,
-      rawName: item.rawName,
-      normalizedName: normalize(item.rawName),
-      price: item.price,
-      regularPrice: item.regularPrice ?? null,
-      isSale: item.isSale,
-      saleValidFrom: item.saleValidFrom ?? null,
-      saleValidTo: item.saleValidTo ?? null,
-      seenAt: now,
-      sourceRef: item.sourceRef ?? null,
-    })),
-  );
+
+  const rows = items.map((item) => ({
+    storeId,
+    rawName: item.rawName,
+    normalizedName: normalize(item.rawName),
+    price: item.price,
+    regularPrice: item.regularPrice ?? null,
+    isSale: item.isSale,
+    saleValidFrom: item.saleValidFrom ?? null,
+    saleValidTo: item.saleValidTo ?? null,
+    seenAt: now,
+    sourceRef: item.sourceRef ?? null,
+  }));
+
+  // Po dávkách kvůli limitu parametrů v D1 (viz src/db/chunks.ts). Snapshot
+  // obchodu se při každé kontrole přepíše celý, takže přerušení uprostřed
+  // nic trvalého nepoškodí.
+  for (const chunk of chunksForInsert(storeItems, rows)) {
+    await db.insert(storeItems).values(chunk).run();
+  }
 }
 
 function toScraped(row: typeof storeItems.$inferSelect): ScrapedItem {

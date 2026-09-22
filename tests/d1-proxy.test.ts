@@ -16,10 +16,11 @@ import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 
+import { chunksForInsert, D1_MAX_PARAMS } from "../src/db/chunks";
 import { connect, schema } from "../src/db/connect";
 import type { Db } from "../src/db/connect";
 
-const { products, stores } = schema;
+const { products, storeItems, stores } = schema;
 
 let sqlite: Database.Database;
 let server: http.Server;
@@ -28,6 +29,9 @@ let dbFile: string;
 
 /** Tělem je stejný kód jako v `d1Proxy` – jen nad better-sqlite3. */
 function execute(sql: string, params: unknown[], method: string): { rows: unknown[] | null } {
+  // Skutečné D1 odmítne dotaz s víc než 100 parametry; SQLite by ho vzalo.
+  // Bez tohohle by test pustil hromadný insert, který na Cloudflare spadne.
+  if (params.length > D1_MAX_PARAMS) throw new Error("too many SQL variables");
   const statement = sqlite.prepare(sql);
   if (!statement.reader) {
     statement.run(...(params as never[]));
@@ -56,9 +60,10 @@ before(async () => {
     request.on("end", () => {
       try {
         const { sql, params, method } = JSON.parse(body);
-        response
-          .writeHead(200, { "content-type": "application/json" })
-          .end(JSON.stringify(execute(sql, params, method)));
+        // Výsledek počítáme dřív, než odejdou hlavičky; jinak by chyba z
+        // dotazu přišla až po hlavičce 200 a odpověď by se nikdy neuzavřela.
+        const result = execute(sql, params, method);
+        response.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(result));
       } catch (error) {
         response.writeHead(500).end(String(error));
       }
@@ -124,5 +129,48 @@ describe("databáze přes D1", () => {
   it("prázdný výběr vrátí prázdné pole, ne chybu", async () => {
     assert.deepEqual(await db.select().from(products).all(), []);
     assert.equal(await db.select().from(products).get(), undefined);
+  });
+});
+
+describe("limit parametrů v D1", () => {
+  const item = (i: number) => ({
+    storeId: 1,
+    rawName: `Zboží ${i}`,
+    normalizedName: `zbozi ${i}`,
+    price: 10 + i,
+    isSale: i % 2 === 0,
+    seenAt: new Date(),
+  });
+
+  before(async () => {
+    await db.insert(stores).values({ name: "Kaufland", kind: "weekly-leaflet", sourceUrl: "https://k" }).run();
+  });
+
+  it("jedním příkazem se leták neuloží – přesně to se stalo na skutečném D1", async () => {
+    const rows = Array.from({ length: 11 }, (_, i) => item(i));
+    const full = { ...rows[0], regularPrice: null, saleValidFrom: null, saleValidTo: null, sourceRef: null };
+    await assert.rejects(
+      db.insert(storeItems).values(rows.map((r) => ({ ...full, ...r }))).run(),
+    );
+  });
+
+  it("po dávkách se uloží celý leták", async () => {
+    await db.delete(storeItems).run();
+    const rows = Array.from({ length: 400 }, (_, i) => item(i));
+    for (const chunk of chunksForInsert(storeItems, rows)) {
+      await db.insert(storeItems).values(chunk).run();
+    }
+    assert.equal((await db.select().from(storeItems).all()).length, 400);
+  });
+
+  it("dávka se vejde do limitu i při všech sloupcích tabulky", () => {
+    const chunks = chunksForInsert(storeItems, Array.from({ length: 95 }, (_, i) => i));
+    const columns = 11;
+    assert.ok(chunks.every((c) => c.length * columns <= D1_MAX_PARAMS));
+    assert.equal(chunks.flat().length, 95);
+  });
+
+  it("prázdný vstup nedá žádnou dávku", () => {
+    assert.deepEqual(chunksForInsert(storeItems, []), []);
   });
 });
