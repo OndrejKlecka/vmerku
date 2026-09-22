@@ -13,8 +13,10 @@
       // `basic` = 1 GiB paměti a 4 GB disku. Menší `dev` (256 MiB) na
       // rozebrání letáku nestačí.
       "instance_type": "basic",
-      // Jeden uživatel, jedna historie cen, jedna instance.
-      "max_instances": 1
+      // Běží vždy jen jedna instance (worker ji volá pevným jménem). Druhé
+      // místo je rezerva pro nasazení: nová verze může naběhnout, zatímco se
+      // stará ještě vypíná, místo aby na ni čekala.
+      "max_instances": 2
     }
   ],
 

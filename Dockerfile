@@ -40,4 +40,7 @@ COPY scripts ./scripts
 # zvenčí (compose.yaml, render.yaml).
 EXPOSE 3000
 
-CMD ["npm", "run", "start"]
+# Next spouštíme napřímo, ne přes `npm run start`: npm neposílá dál signál
+# k ukončení, takže by se starý kontejner při nasazení nevypnul a Cloudflare
+# by na něj čekal až 15 minut, než by pustil nový.
+CMD ["node_modules/.bin/next", "start"]
