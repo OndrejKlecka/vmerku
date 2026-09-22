@@ -24,7 +24,7 @@
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["VmerkuContainer"] }],
 
   // Disk kontejneru je pomíjivý, takže data leží v D1.
-  // `database_id` doplň podle výpisu `wrangler d1 create vmerku`.
+  // `database_id` je z dashboardu (Storage & Databases → D1 → vmerku).
   "d1_databases": [
     {
       "binding": "DB",
