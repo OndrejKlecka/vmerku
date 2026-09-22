@@ -2,7 +2,12 @@
  * Týdenní letáky kamenných řetězců (sekce 2.1).
  *
  * Postup: stáhne PDF ze `source_url`, spočítá hash (když se nezměnil, končíme),
- * vytáhne textovou vrstvu přes pdfjs a z řádků vyparsuje dvojice název + cena.
+ * vytáhne textovou vrstvu přes pdfjs a z ní poskládá dvojice název + cena.
+ *
+ * Leták je mřížka dlaždic, ne text po řádcích: tři produkty vedle sebe leží
+ * ve stejné výšce. Proto se text neseskupuje do řádků přes celou stránku, ale
+ * do buněk – fragmenty se spojí, jen když na sebe vodorovně navazují – a název
+ * se k ceně páruje podle polohy na stránce, ne podle pořadí v souboru.
  *
  * Letáky bez textové vrstvy (čistě obrázkové) potřebují OCR. Bundlovat
  * tesseract do appky je pro MVP zbytečná zátěž, takže se volá externí příkaz
@@ -21,50 +26,95 @@ import { type ScrapedItem, type ScrapeResult, type Scraper, USER_AGENT } from ".
 
 const execFileAsync = promisify(execFile);
 
-/** Pod touhle délkou textu považujeme PDF za obrázkové. */
-const TEXT_LAYER_MIN_CHARS = 400;
+/**
+ * Pod tímhle průměrem znaků na stránku považujeme PDF za obrázkové.
+ * Měří se na stránku, ne na celý soubor – dvoustránkový leták a
+ * čtyřicetistránkový mají jinak úplně jiné absolutní hodnoty.
+ */
+export const TEXT_LAYER_MIN_CHARS_PER_PAGE = 120;
 
-type Line = { text: string; page: number };
+/** Jeden útržek textu i s polohou na stránce. */
+export type Cell = {
+  text: string;
+  page: number;
+  /** Levý okraj a šířka v bodech PDF. */
+  x: number;
+  width: number;
+  /** Svislá pozice; v souřadnicích PDF roste směrem nahoru. */
+  y: number;
+};
 
-async function extractLines(pdf: Buffer): Promise<Line[]> {
+/** Zpětně kompatibilní tvar pro jednosloupcový text (používají ho testy). */
+export type Line = { text: string; page: number };
+
+/**
+ * Textová vrstva PDF poskládaná do buněk.
+ * Exportované kvůli diagnostice `npm run leaflet:dump`.
+ */
+export async function extractCells(pdf: Buffer): Promise<Cell[]> {
   const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
   const task = pdfjs.getDocument({ data: new Uint8Array(pdf), useSystemFonts: true });
   const doc = await task.promise;
 
-  const lines: Line[] = [];
+  const cells: Cell[] = [];
   for (let p = 1; p <= doc.numPages; p++) {
     const page = await doc.getPage(p);
     const content = await page.getTextContent();
+    const pageWidth = page.view[2] - page.view[0];
 
-    // Text v PDF chodí po útržcích; seskupíme je podle svislé pozice do řádků.
-    const rows = new Map<number, { x: number; str: string }[]>();
+    // Fragmenty ve stejné výšce patří k sobě jen tehdy, když na sebe
+    // vodorovně navazují. Větší mezera znamená vedlejší sloupec letáku.
+    const maxGap = Math.max(10, pageWidth * 0.02);
+
+    type Fragment = { x: number; width: number; str: string };
+    const rows = new Map<number, Fragment[]>();
     for (const item of content.items) {
       if (!("str" in item) || !item.str.trim()) continue;
       const y = Math.round((item.transform[5] as number) / 4) * 4;
       const row = rows.get(y) ?? [];
-      row.push({ x: item.transform[4] as number, str: item.str });
+      row.push({ x: item.transform[4] as number, width: item.width, str: item.str });
       rows.set(y, row);
     }
 
     for (const y of [...rows.keys()].sort((a, b) => b - a)) {
-      const text = rows
-        .get(y)!
-        .sort((a, b) => a.x - b.x)
-        .map((c) => c.str)
-        .join(" ")
-        .replace(/\s+/g, " ")
-        .trim();
-      if (text) lines.push({ text, page: p });
+      const fragments = rows.get(y)!.sort((a, b) => a.x - b.x);
+
+      let current: Fragment[] = [];
+      const flush = () => {
+        if (current.length === 0) return;
+        const text = current.map((f) => f.str).join(" ").replace(/\s+/g, " ").trim();
+        if (text) {
+          const x = current[0].x;
+          const last = current[current.length - 1];
+          cells.push({ text, page: p, x, width: last.x + last.width - x, y });
+        }
+        current = [];
+      };
+
+      for (const fragment of fragments) {
+        const previous = current[current.length - 1];
+        if (previous && fragment.x - (previous.x + previous.width) > maxGap) flush();
+        current.push(fragment);
+      }
+      flush();
     }
     page.cleanup();
   }
   await task.destroy();
-  return lines;
+  return cells;
+}
+
+/** Má PDF použitelnou textovou vrstvu, nebo potřebuje OCR? */
+export function hasTextLayer(cells: Pick<Cell, "text" | "page">[]): boolean {
+  if (cells.length === 0) return false;
+  const pages = Math.max(...cells.map((c) => c.page));
+  const chars = cells.reduce((n, c) => n + c.text.length, 0);
+  return chars / pages >= TEXT_LAYER_MIN_CHARS_PER_PAGE;
 }
 
 /** „24,90 Kč“, „24.90“, „19,-“ → 24.9 / 19 */
 export function parsePrice(text: string): number | null {
-  const cleaned = text.replace(/[\s ]/g, "");
+  const cleaned = text.replace(/[\s\u00a0]/g, "");
   const m = cleaned.match(/(\d{1,4}(?:[.,]\d{1,2})?)\s*(?:kč|kc|czk|,-|-)?/i);
   if (!m) return null;
   const value = Number(m[1].replace(",", "."));
@@ -94,48 +144,97 @@ export function parseValidity(
   return { from, to };
 }
 
-/**
- * Z řádků letáku poskládá položky.
- * Heuristika: cena se v letáku tiskne blízko názvu. Bereme text na témže
- * řádku před cenou, a když tam není, poslední smysluplný řádek nad ní.
- */
-export function itemsFromLines(lines: Line[], validity: { from: Date | null; to: Date | null }): ScrapedItem[] {
-  const items: ScrapedItem[] = [];
-  let lastName: string | null = null;
+/** Text vypadá jako název produktu, ne jako číslo stránky nebo slogan. */
+function looksLikeName(text: string): boolean {
+  return /[a-zá-ž]{3}/i.test(text) && text.length >= 4 && text.length <= 90;
+}
 
-  for (const line of lines) {
-    const m = line.text.match(PRICE_RE);
-    if (!m) {
-      const candidate = line.text.trim();
-      // Název má mít písmena a rozumnou délku – ne čísla stránek a slogany.
-      if (/[a-zá-ž]{3}/i.test(candidate) && candidate.length >= 4 && candidate.length <= 90) {
-        lastName = candidate;
-      }
+/** Nejvyšší svislá vzdálenost mezi cenou a názvem, který k ní ještě patří. */
+const MAX_PAIR_DISTANCE = 160;
+
+/** Překrývají se buňky vodorovně natolik, že patří do stejného sloupce? */
+function sameColumn(a: Cell, b: Cell): boolean {
+  const overlap = Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x);
+  if (overlap > 0) return true;
+  const centerA = a.x + a.width / 2;
+  const centerB = b.x + b.width / 2;
+  return Math.abs(centerA - centerB) < 40;
+}
+
+type Pairing = { name: Cell; prices: { cell: Cell; value: number }[] };
+
+/**
+ * Z buněk poskládá položky letáku.
+ *
+ * Buňka, která obsahuje název i cenu, se vyřídí rovnou. Samostatná cena se
+ * spáruje s nejbližším názvem ve stejném sloupci. Když k jednomu názvu patří
+ * dvě ceny, nižší je akční a vyšší běžná.
+ */
+export function itemsFromCells(
+  cells: Cell[],
+  validity: { from: Date | null; to: Date | null },
+): ScrapedItem[] {
+  const items: ScrapedItem[] = [];
+  const priceCells: { cell: Cell; value: number }[] = [];
+  const nameCells: Cell[] = [];
+
+  for (const cell of cells) {
+    const match = cell.text.match(PRICE_RE);
+    if (!match) {
+      if (looksLikeName(cell.text)) nameCells.push(cell);
       continue;
     }
 
-    const price = parsePrice(m[1]);
-    if (price == null) continue;
+    const value = parsePrice(match[1]);
+    if (value == null) continue;
 
-    const inline = line.text.slice(0, m.index ?? 0).trim();
-    const name = /[a-zá-ž]{3}/i.test(inline) && inline.length >= 4 ? inline : lastName;
-    if (!name) continue;
+    const before = cell.text.slice(0, match.index ?? 0).trim();
+    if (looksLikeName(before)) {
+      // Název i cena v jedné buňce – druhá cena za ní bývá ta běžná.
+      const rest = cell.text.slice((match.index ?? 0) + match[0].length);
+      const restMatch = rest.match(PRICE_RE);
+      const regular = restMatch ? parsePrice(restMatch[1]) : null;
+      items.push(
+        buildItem(before, [value, regular].filter((v): v is number => v != null), cell, validity),
+      );
+      continue;
+    }
 
-    // Druhá cena na řádku bývá běžná cena přeškrtnutá vedle akční.
-    const rest = line.text.slice((m.index ?? 0) + m[0].length);
-    const regular = rest.match(PRICE_RE) ? parsePrice(rest.match(PRICE_RE)![1]) : null;
+    priceCells.push({ cell, value });
+  }
 
-    items.push({
-      rawName: name.replace(/\s+/g, " ").trim(),
-      price: regular != null && regular < price ? regular : price,
-      regularPrice: regular != null && regular > price ? regular : null,
-      // Všechno v letáku je akční nabídka.
-      isSale: true,
-      saleValidFrom: validity.from,
-      saleValidTo: validity.to,
-      sourceRef: `strana ${line.page}`,
-    });
-    lastName = null;
+  // Každou samostatnou cenu přiřadíme k nejbližšímu názvu ve stejném sloupci.
+  const pairings = new Map<Cell, Pairing>();
+  for (const price of priceCells) {
+    let best: Cell | null = null;
+    let bestDistance = Infinity;
+
+    for (const name of nameCells) {
+      if (name.page !== price.cell.page || !sameColumn(name, price.cell)) continue;
+      const distance = Math.abs(name.y - price.cell.y);
+      // Při shodné vzdálenosti dáme přednost názvu nad cenou, jak bývá v letáku.
+      const weighted = name.y > price.cell.y ? distance : distance * 1.2;
+      if (weighted < bestDistance) {
+        bestDistance = weighted;
+        best = name;
+      }
+    }
+
+    if (!best || bestDistance > MAX_PAIR_DISTANCE) continue;
+    const pairing = pairings.get(best) ?? { name: best, prices: [] };
+    pairing.prices.push(price);
+    pairings.set(best, pairing);
+  }
+
+  for (const pairing of pairings.values()) {
+    items.push(
+      buildItem(
+        pairing.name.text,
+        pairing.prices.map((p) => p.value),
+        pairing.name,
+        validity,
+      ),
+    );
   }
 
   // Tentýž název se v letáku opakuje (přehled + detail) – necháme nejnižší cenu.
@@ -146,6 +245,44 @@ export function itemsFromLines(lines: Line[], validity: { from: Date | null; to:
     if (!seen || item.price < seen.price) byName.set(key, item);
   }
   return [...byName.values()];
+}
+
+function buildItem(
+  rawName: string,
+  prices: number[],
+  source: Cell,
+  validity: { from: Date | null; to: Date | null },
+): ScrapedItem {
+  const price = Math.min(...prices);
+  const highest = Math.max(...prices);
+  return {
+    rawName: rawName.replace(/\s+/g, " ").trim(),
+    price,
+    regularPrice: highest > price ? highest : null,
+    // Všechno v letáku je akční nabídka.
+    isSale: true,
+    saleValidFrom: validity.from,
+    saleValidTo: validity.to,
+    sourceRef: `strana ${source.page}`,
+  };
+}
+
+/**
+ * Jednosloupcová varianta – buňky se odvodí z pořadí řádků.
+ * Používá ji testovací sada a zdroje, kde poloha není k dispozici.
+ */
+export function itemsFromLines(
+  lines: Line[],
+  validity: { from: Date | null; to: Date | null },
+): ScrapedItem[] {
+  const cells: Cell[] = lines.map((line, index) => ({
+    text: line.text,
+    page: line.page,
+    x: 0,
+    width: 1000,
+    y: (lines.length - index) * 20,
+  }));
+  return itemsFromCells(cells, validity);
 }
 
 async function runOcr(pdf: Buffer): Promise<Buffer | null> {
@@ -188,10 +325,9 @@ export const leafletScraper: Scraper = {
       return { items: [], sourceHash, warnings: ["Leták se od poslední kontroly nezměnil."] };
     }
 
-    let lines = await extractLines(pdf);
-    let charCount = lines.reduce((n, l) => n + l.text.length, 0);
+    let cells = await extractCells(pdf);
 
-    if (charCount < TEXT_LAYER_MIN_CHARS) {
+    if (!hasTextLayer(cells)) {
       const ocred = await runOcr(pdf);
       if (!ocred) {
         warnings.push(
@@ -200,19 +336,18 @@ export const leafletScraper: Scraper = {
         return { items: [], sourceHash, warnings };
       }
       pdf = ocred;
-      lines = await extractLines(pdf);
-      charCount = lines.reduce((n, l) => n + l.text.length, 0);
+      cells = await extractCells(pdf);
       warnings.push(`${store.name}: leták prošel OCR.`);
     }
 
     // Platnost akce bývá na titulní straně.
-    const header = lines.slice(0, 40).map((l) => l.text).join(" ");
+    const header = cells.slice(0, 40).map((c) => c.text).join(" ");
     const validity = parseValidity(header);
     if (!validity.from) {
       warnings.push(`${store.name}: v letáku se nepodařilo najít platnost akce.`);
     }
 
-    const items = itemsFromLines(lines, validity);
+    const items = itemsFromCells(cells, validity);
     if (items.length === 0) {
       warnings.push(`${store.name}: z letáku se nepodařilo vytáhnout žádné položky.`);
     }

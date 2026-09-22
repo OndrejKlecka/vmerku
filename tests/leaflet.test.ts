@@ -1,7 +1,13 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { itemsFromLines, parsePrice, parseValidity } from "../src/lib/scrapers/leaflet";
+import {
+  type Cell,
+  itemsFromCells,
+  itemsFromLines,
+  parsePrice,
+  parseValidity,
+} from "../src/lib/scrapers/leaflet";
 
 describe("parsePrice", () => {
   it("přečte české zápisy cen", () => {
@@ -70,5 +76,51 @@ describe("itemsFromLines", () => {
     );
     assert.equal(items.length, 1);
     assert.equal(items[0].price, 49.9);
+  });
+});
+
+describe("itemsFromCells", () => {
+  const validity = { from: new Date(2026, 8, 23), to: new Date(2026, 8, 29) };
+
+  /** Tři dlaždice vedle sebe, jak je leták sází: název nahoře, ceny pod ním. */
+  const grid: Cell[] = [
+    { text: "Pivo Holba Šerák 11° 0,5 l", page: 1, x: 30, width: 150, y: 700 },
+    { text: "Máslo Madeta 250 g", page: 1, x: 220, width: 150, y: 700 },
+    { text: "Káva Tchibo Family 250 g", page: 1, x: 410, width: 150, y: 700 },
+    { text: "15,90 Kč", page: 1, x: 30, width: 70, y: 660 },
+    { text: "49,90 Kč", page: 1, x: 220, width: 70, y: 660 },
+    { text: "74,90 Kč", page: 1, x: 410, width: 70, y: 660 },
+    { text: "19,90 Kč", page: 1, x: 30, width: 60, y: 638 },
+  ];
+
+  it("nespojí sousední sloupce do jedné položky", () => {
+    const items = itemsFromCells(grid, validity);
+    assert.equal(items.length, 3);
+    assert.deepEqual(
+      items.map((i) => i.rawName).sort(),
+      ["Káva Tchibo Family 250 g", "Máslo Madeta 250 g", "Pivo Holba Šerák 11° 0,5 l"],
+    );
+  });
+
+  it("spáruje cenu s názvem ve svém sloupci", () => {
+    const items = itemsFromCells(grid, validity);
+    const beer = items.find((i) => i.rawName.startsWith("Pivo Holba"));
+    assert.equal(beer?.price, 15.9);
+    assert.equal(beer?.regularPrice, 19.9);
+
+    const butter = items.find((i) => i.rawName.startsWith("Máslo"));
+    assert.equal(butter?.price, 49.9);
+    assert.equal(butter?.regularPrice, null);
+  });
+
+  it("nepřiřadí cenu k názvu na opačném konci stránky", () => {
+    const items = itemsFromCells(
+      [
+        { text: "Máslo Madeta 250 g", page: 1, x: 30, width: 150, y: 700 },
+        { text: "49,90 Kč", page: 1, x: 30, width: 70, y: 200 },
+      ],
+      validity,
+    );
+    assert.equal(items.length, 0);
   });
 });

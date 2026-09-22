@@ -15,7 +15,8 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx scripts/migrate.ts",
     "db:demo": "tsx scripts/demo.ts",
-    "test": "tsx --test tests/*.test.ts"
+    "test": "tsx --test tests/*.test.ts",
+    "leaflet:dump": "tsx scripts/dump-leaflet.ts"
   },
   "dependencies": {
     "better-sqlite3": "^13.0.3",

@@ -47,7 +47,8 @@ src/lib/scrapers/         rohlik.ts (dotazový), leaflet.ts (PDF), index.ts (reg
 src/lib/queries.ts        data pro obrazovky
 src/lib/notify.ts         skládání a odesílání e-mailů
 src/app/                  Přehled, detail produktu, Přidat produkt, Nastavení
-scripts/                  worker, jednorázová kontrola, seed, ukázková data
+scripts/                  worker, jednorázová kontrola, seed, ukázková data,
+                          dump-leaflet.ts (diagnostika parsování letáku)
 tests/                    testy párování, parsování letáku a insightů
 ```
 
@@ -57,6 +58,15 @@ Přibyla tabulka **`store_items`** – poslední stažená nabídka za každý o
 Sekce 2.2 požaduje hledání „napříč aktuálně nascrapovanými daty“ a tohle je to,
 v čem se hledá. Při každém scrapu se obsah pro daný obchod nahradí; historie
 zůstává v `price_observations`.
+
+## Jak se čte leták
+
+Leták není text po řádcích, ale mřížka dlaždic – tři produkty vedle sebe leží
+ve stejné výšce. Kdyby se text seskupoval po řádcích přes celou stránku, spojily
+by se sousední sloupce do jedné položky. Proto se fragmenty spojují do buněk jen
+tehdy, když na sebe vodorovně navazují, a cena se k názvu páruje podle polohy na
+stránce: nejbližší název ve stejném sloupci, s přednostní volbou toho nad cenou.
+Když k jednomu názvu patří dvě ceny, nižší je akční a vyšší běžná.
 
 ## Jak funguje párování
 
@@ -77,13 +87,23 @@ Chování je pokryté testy – `npm test`.
 prostředí nemá přístup na rohlik.cz ani na weby řetězců, takže scrapery jsou
 napsané podle struktury zdrojů, ale neověřené. Postup:
 
-1. **Letáky.** V Nastavení nastav u obchodu `source_url` na přímou adresu PDF
-   letáku (ne na stránku s přehledem letáků). Pak `npm run check leaflet`.
-   Výpis řekne, kolik položek se vytáhlo a jestli má PDF textovou vrstvu.
+1. **Letáky.** Nejrychlejší je pustit diagnostiku rovnou na stažené PDF, bez
+   databáze a bez nastavování obchodu:
+
+   ```bash
+   npm run leaflet:dump ~/Downloads/letak.pdf
+   npm run leaflet:dump ~/Downloads/letak.pdf --raw    # syrové buňky i s pozicí
+   npm run leaflet:dump ~/Downloads/letak.pdf --limit=80
+   ```
+
+   Vypíše počet stran, jestli má PDF textovou vrstvu, nalezenou platnost akce
+   a vyparsované položky. Stejná data pak projdou i ostrou cestou: v Nastavení
+   nastav u obchodu `source_url` na přímou adresu PDF letáku (ne na stránku
+   s přehledem letáků) a spusť `npm run check leaflet`.
    - Když leták textovou vrstvu nemá, nastav `OCR_COMMAND`, např.
      `OCR_COMMAND="ocrmypdf --force-ocr -l ces {in} {out}"`.
    - Když se položky vytáhnou rozsekané, doladí se heuristika v
-     `itemsFromLines()` v `src/lib/scrapers/leaflet.ts`; testy k ní jsou
+     `itemsFromCells()` v `src/lib/scrapers/leaflet.ts`; testy k ní jsou
      v `tests/leaflet.test.ts`.
 2. **Rohlík.** `npm run check daily`. Scraper zkouší nejdřív interní JSON
    endpoint a pak parsování HTML. Obě adresy jdou přepsat proměnnými
