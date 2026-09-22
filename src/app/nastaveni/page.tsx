@@ -1,9 +1,24 @@
+import { RohlikSection } from "@/components/rohlik-section";
 import { SettingsForm } from "@/components/settings-form";
+import { db } from "@/db";
 import { getAllStores, getSettings } from "@/lib/queries";
+import { rohlikStatus } from "@/lib/rohlik-mcp";
 
 export const dynamic = "force-dynamic";
 
-export default async function SettingsPage() {
+export default async function SettingsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ rohlik?: string; zprava?: string }>;
+}) {
+  const { rohlik, zprava } = await searchParams;
+  const flash =
+    rohlik === "pripojeno"
+      ? ({ kind: "ok" } as const)
+      : rohlik === "chyba"
+        ? ({ kind: "error", message: zprava } as const)
+        : null;
+  const status = await rohlikStatus(db);
   const settings = await getSettings();
   const stores = (await getAllStores()).map((s) => ({
     id: s.id,
@@ -23,6 +38,8 @@ export default async function SettingsPage() {
       </div>
 
       <SettingsForm settings={settings} stores={stores} />
+
+      <RohlikSection status={status} flash={flash} />
 
       <section className="section">
         <div className="notice">

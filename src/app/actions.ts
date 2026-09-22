@@ -14,6 +14,7 @@ import {
   userSettings,
 } from "@/db/schema";
 import { matchPercent, normalize, rankCandidates } from "@/lib/match";
+import { disconnectRohlik } from "@/lib/rohlik-mcp";
 import { scraperFor } from "@/lib/scrapers";
 
 export type MatchCandidate = {
@@ -78,7 +79,7 @@ export async function searchCandidates(
         }
       } else {
         const scraper = scraperFor(store);
-        const found = (await scraper.search?.(store, trimmed)) ?? [];
+        const found = (await scraper.search?.(store, trimmed, db)) ?? [];
         pool = found.map((i) => ({
           rawName: i.rawName,
           price: i.price,
@@ -247,3 +248,9 @@ export async function confirmAlias(aliasId: number): Promise<void> {
 }
 
 export { normalize };
+
+/** Odpojí účet Rohlíku; smaže tokeny i registraci klienta. */
+export async function disconnectRohlikAction(): Promise<void> {
+  await disconnectRohlik(db);
+  revalidatePath("/nastaveni");
+}

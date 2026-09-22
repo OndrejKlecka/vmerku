@@ -12,7 +12,11 @@
  */
 import * as cheerio from "cheerio";
 
+import type { Db } from "@/db/connect";
 import type { Store } from "@/db/schema";
+import { rohlikStatus, searchRohlikMcp } from "@/lib/rohlik-mcp";
+
+import { itemsFromJson, parsePrice } from "./rohlik-parse";
 import { type ScrapedItem, type Scraper, USER_AGENT } from "./types";
 
 const SEARCH_JSON =
@@ -29,66 +33,6 @@ async function fetchText(url: string, accept: string): Promise<string> {
   });
   if (!res.ok) throw new Error(`Rohlík vrátil ${res.status} pro ${url}`);
   return res.text();
-}
-
-/** Z JSON odpovědi vytáhne položky. Tolerantní – tvar odpovědi se mění. */
-function itemsFromJson(payload: unknown): ScrapedItem[] {
-  const out: ScrapedItem[] = [];
-
-  const visit = (node: unknown): void => {
-    if (Array.isArray(node)) {
-      node.forEach(visit);
-      return;
-    }
-    if (!node || typeof node !== "object") return;
-    const o = node as Record<string, unknown>;
-
-    const name =
-      typeof o.productName === "string"
-        ? o.productName
-        : typeof o.name === "string"
-          ? o.name
-          : null;
-    const priceNode = (o.price ?? o.currentPrice ?? o.salePrice) as
-      | Record<string, unknown>
-      | number
-      | undefined;
-    const price =
-      typeof priceNode === "number"
-        ? priceNode
-        : priceNode && typeof priceNode.amount === "number"
-          ? priceNode.amount
-          : null;
-
-    if (name && typeof price === "number" && price > 0) {
-      const before = (o.priceBeforeDiscount ?? o.originalPrice) as
-        | Record<string, unknown>
-        | number
-        | undefined;
-      const regular =
-        typeof before === "number"
-          ? before
-          : before && typeof before.amount === "number"
-            ? before.amount
-            : null;
-      out.push({
-        rawName: name,
-        price,
-        regularPrice: regular,
-        isSale: Boolean(o.sales ?? o.badge ?? (regular != null && regular > price)),
-        sourceRef:
-          typeof o.link === "string"
-            ? new URL(o.link, "https://www.rohlik.cz").toString()
-            : null,
-      });
-      return;
-    }
-
-    Object.values(o).forEach(visit);
-  };
-
-  visit(payload);
-  return out;
 }
 
 /** Záložní cesta: vyparsuje ceny z HTML výsledků hledání. */
@@ -116,15 +60,20 @@ function itemsFromHtml(html: string): ScrapedItem[] {
   return out;
 }
 
-export function parsePrice(text: string): number | null {
-  const m = text.replace(/\s| /g, "").match(/(\d+(?:[.,]\d{1,2})?)/);
-  if (!m) return null;
-  const value = Number(m[1].replace(",", "."));
-  return Number.isFinite(value) && value > 0 ? value : null;
-}
-
 export const rohlikScraper: Scraper = {
-  async search(_store: Store, query: string): Promise<ScrapedItem[]> {
+  async search(_store: Store, query: string, db?: Db): Promise<ScrapedItem[]> {
+    // Přednost má oficiální MCP server, pokud je v Nastavení připojený účet.
+    // Když selže nebo nic nenajde, zkusí se ještě web – ať kontrola nepřijde
+    // o data jen kvůli výpadku jedné cesty.
+    if (db && (await rohlikStatus(db)).connected) {
+      try {
+        const items = await searchRohlikMcp(db, query);
+        if (items.length > 0) return items;
+      } catch (error) {
+        console.warn(`Rohlík MCP selhal pro „${query}“, zkouším web:`, (error as Error).message);
+      }
+    }
+
     const q = encodeURIComponent(query);
 
     try {

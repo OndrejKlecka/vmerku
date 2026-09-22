@@ -1,3 +1,4 @@
+import type { Db } from "@/db/connect";
 import type { Store } from "@/db/schema";
 
 /** Jedna položka tak, jak ji vidí obchod – ještě před spárováním na produkt. */
@@ -24,8 +25,11 @@ export type ScrapeResult = {
 export interface Scraper {
   /** Stáhne celou aktuální nabídku (týdenní leták). */
   snapshot?(store: Store): Promise<ScrapeResult>;
-  /** Vyhledá konkrétní dotaz (e-shop, kde nemá smysl stahovat celý katalog). */
-  search?(store: Store, query: string): Promise<ScrapedItem[]>;
+  /**
+   * Vyhledá konkrétní dotaz (e-shop, kde nemá smysl stahovat celý katalog).
+   * Databázi dostane scraper, který si v ní drží přihlášení (Rohlík MCP).
+   */
+  search?(store: Store, query: string, db?: Db): Promise<ScrapedItem[]>;
 }
 
 /**

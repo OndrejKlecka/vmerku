@@ -156,9 +156,28 @@ export const storeItems = sqliteTable(
   (t) => [index("items_store_normalized").on(t.storeId, t.normalizedName)],
 );
 
+/**
+ * Přihlášení k oficiálnímu MCP serveru Rohlíku (OAuth). Jediný řádek s id 1:
+ * appka má jednoho uživatele a k Rohlíku ji připojuje jeden účet.
+ * Tokeny a registrace klienta se ukládají jako JSON tak, jak je vrátí server.
+ */
+export const rohlikAuth = sqliteTable("rohlik_auth", {
+  id: integer("id").primaryKey().default(1),
+  /** Adresa, na kterou Rohlík po přihlášení vrací – musí sedět při obou krocích. */
+  redirectUrl: text("redirect_url"),
+  clientInformation: text("client_information"),
+  tokens: text("tokens"),
+  codeVerifier: text("code_verifier"),
+  /** Náhodná hodnota proti podvrženému návratu z přihlášení. */
+  state: text("state"),
+  connectedAt: integer("connected_at", { mode: "timestamp" }),
+  lastError: text("last_error"),
+});
+
 export type Store = typeof stores.$inferSelect;
 export type Product = typeof products.$inferSelect;
 export type ProductStoreAlias = typeof productStoreAliases.$inferSelect;
 export type PriceObservation = typeof priceObservations.$inferSelect;
 export type UserSettings = typeof userSettings.$inferSelect;
 export type StoreItem = typeof storeItems.$inferSelect;
+export type RohlikAuth = typeof rohlikAuth.$inferSelect;

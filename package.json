@@ -24,6 +24,7 @@
     "cf:release": "npm run cf:migrate && wrangler deploy"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
     "better-sqlite3": "^13.0.3",
     "cheerio": "^1.2.0",
     "dotenv": "^18.0.2",

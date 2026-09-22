@@ -128,7 +128,7 @@ async function collectStoreItems(
   const found: ScrapedItem[] = [];
   for (const query of queries) {
     try {
-      found.push(...(await scraper.search(store, query)));
+      found.push(...(await scraper.search(store, query, db)));
     } catch (error) {
       report.warnings.push(`${store.name} / „${query}“: ${(error as Error).message}`);
     }
