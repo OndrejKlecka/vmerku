@@ -30,7 +30,7 @@ import type { Db } from "@/db/connect";
 import { rohlikAuth, type RohlikAuth } from "@/db/schema";
 
 import { itemsFromJson } from "./scrapers/rohlik-parse";
-import { USER_AGENT, type ScrapedItem } from "./scrapers/types";
+import type { ScrapedItem } from "./scrapers/types";
 
 export const ROHLIK_MCP_URL = process.env.ROHLIK_MCP_URL ?? "https://mcp.rohlik.cz/mcp";
 
@@ -157,11 +157,8 @@ const LOGIN_TIMEOUT_MS = 15_000;
 async function fetchWithTimeout(input: string | URL, init?: RequestInit): Promise<Response> {
   const url = String(input);
   try {
-    const headers = new Headers(init?.headers);
-    if (!headers.has("user-agent")) headers.set("user-agent", USER_AGENT);
     const response = await fetch(input, {
       ...init,
-      headers,
       signal: AbortSignal.timeout(LOGIN_TIMEOUT_MS),
     });
     if (response.headers.get("cf-mitigated") === "challenge") {
