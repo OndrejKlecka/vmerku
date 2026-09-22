@@ -144,13 +144,44 @@ export function parseValidity(
   return { from, to };
 }
 
+/**
+ * Reklamní texty, kterých je leták plný. Bez nich by se cena spárovala
+ * se štítkem nad sebou („Super cena“) místo s názvem produktu opodál.
+ */
+const MARKETING = [
+  /^super cena/,
+  /^cenovy trumf/,
+  /^usetrete/,
+  /^nova bezna cena/,
+  /^ceny v klidu/,
+  /^to se vyplati/,
+  /^vitez na poli/,
+  /^max\./,
+  /^vice na www/,
+  /^plati od/,
+  /^od pondeli/,
+  /^cena za /,
+  /^novinka$/,
+  /^akce$/,
+  /^sleva/,
+  /^-?\d+\s*%/,
+  /^\d+\s*(ks|kg|g|l|ml)\b.*=/,
+];
+
 /** Text vypadá jako název produktu, ne jako číslo stránky nebo slogan. */
 function looksLikeName(text: string): boolean {
-  return /[a-zá-ž]{3}/i.test(text) && text.length >= 4 && text.length <= 90;
+  if (!/[a-zá-ž]{3}/i.test(text) || text.length < 4 || text.length > 90) return false;
+
+  const plain = text
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
+  return !MARKETING.some((re) => re.test(plain));
 }
 
-/** Nejvyšší svislá vzdálenost mezi cenou a názvem, který k ní ještě patří. */
-const MAX_PAIR_DISTANCE = 160;
+/** Nejvyšší vzdálenost mezi cenou a názvem, který k ní ještě patří. */
+const MAX_PAIR_DISTANCE = 190;
 
 /** Překrývají se buňky vodorovně natolik, že patří do stejného sloupce? */
 function sameColumn(a: Cell, b: Cell): boolean {
@@ -159,6 +190,77 @@ function sameColumn(a: Cell, b: Cell): boolean {
   const centerA = a.x + a.width / 2;
   const centerB = b.x + b.width / 2;
   return Math.abs(centerA - centerB) < 40;
+}
+
+/** Mezera mezi buňkami; nula, když se v dané ose překrývají. */
+function gap(aStart: number, aEnd: number, bStart: number, bEnd: number): number {
+  if (aEnd >= bStart && bEnd >= aStart) return 0;
+  return aEnd < bStart ? bStart - aEnd : aStart - bEnd;
+}
+
+/**
+ * Jak daleko je název od ceny. Nejde o čistou vzdálenost: název přímo nad
+ * cenou nebo v jejím sloupci je pravděpodobnější než název vedle, i když leží
+ * o kus dál. Leták sází obojí — u cereálií je popis vlevo od ceny, u krůtích
+ * prsou vpravo, u většiny dlaždic nad ní.
+ */
+function pairDistance(name: Cell, price: Cell): number {
+  const dx = gap(name.x, name.x + name.width, price.x, price.x + price.width);
+  // Výška buňky není k dispozici, takže svislou mezeru bereme jako rozdíl pozic.
+  const dy = Math.abs(name.y - price.y);
+  let distance = Math.hypot(dx, dy);
+
+  if (sameColumn(name, price)) distance *= 0.7;
+  if (name.y > price.y) distance *= 0.9;
+  return distance;
+}
+
+/** Cena rozsazená do dvou velikostí písma: „89“ velké, „,90“ malé a zvednuté. */
+const WHOLE_RE = /^(\d{1,4})(?:[,.]-)?$/;
+const DECIMALS_RE = /^[,.]?(\d{2})\s*(?:Kč|KČ|Kc|CZK)?$/;
+
+/**
+ * Spojí cenu roztrženou do dvou buněk.
+ *
+ * Letáky sázejí haléře menším písmem na jiné účaří, takže z PDF vypadnou jako
+ * samostatné útržky. Bez tohohle kroku by se „89“ a „90“ četly jako dvě ceny.
+ */
+export function mergeSplitPrices(cells: Cell[]): Cell[] {
+  const merged: Cell[] = [];
+  const consumed = new Set<Cell>();
+
+  for (const cell of cells) {
+    if (consumed.has(cell)) continue;
+
+    const whole = cell.text.trim().match(WHOLE_RE);
+    if (!whole) {
+      merged.push(cell);
+      continue;
+    }
+
+    // Haléře stojí hned vpravo od celé části a přibližně ve stejné výšce.
+    const right = cell.x + cell.width;
+    const decimals = cells.find((other) => {
+      if (other === cell || consumed.has(other)) return false;
+      if (other.page !== cell.page) return false;
+      if (!DECIMALS_RE.test(other.text.trim())) return false;
+      return other.x >= right - 6 && other.x - right < 30 && Math.abs(other.y - cell.y) < 26;
+    });
+
+    if (!decimals) {
+      merged.push(cell);
+      continue;
+    }
+
+    consumed.add(decimals);
+    merged.push({
+      ...cell,
+      text: `${whole[1]},${decimals.text.trim().match(DECIMALS_RE)![1]} Kč`,
+      width: decimals.x + decimals.width - cell.x,
+    });
+  }
+
+  return merged;
 }
 
 type Pairing = { name: Cell; prices: { cell: Cell; value: number }[] };
@@ -171,9 +273,10 @@ type Pairing = { name: Cell; prices: { cell: Cell; value: number }[] };
  * dvě ceny, nižší je akční a vyšší běžná.
  */
 export function itemsFromCells(
-  cells: Cell[],
+  rawCells: Cell[],
   validity: { from: Date | null; to: Date | null },
 ): ScrapedItem[] {
+  const cells = mergeSplitPrices(rawCells);
   const items: ScrapedItem[] = [];
   const priceCells: { cell: Cell; value: number }[] = [];
   const nameCells: Cell[] = [];
@@ -210,12 +313,10 @@ export function itemsFromCells(
     let bestDistance = Infinity;
 
     for (const name of nameCells) {
-      if (name.page !== price.cell.page || !sameColumn(name, price.cell)) continue;
-      const distance = Math.abs(name.y - price.cell.y);
-      // Při shodné vzdálenosti dáme přednost názvu nad cenou, jak bývá v letáku.
-      const weighted = name.y > price.cell.y ? distance : distance * 1.2;
-      if (weighted < bestDistance) {
-        bestDistance = weighted;
+      if (name.page !== price.cell.page) continue;
+      const distance = pairDistance(name, price.cell);
+      if (distance < bestDistance) {
+        bestDistance = distance;
         best = name;
       }
     }

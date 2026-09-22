@@ -1,0 +1,27 @@
+# Nasazení na libovolný host s Dockerem.
+#   docker compose up -d --build
+#   docker compose exec web npm run db:migrate
+#   docker compose exec web npm run db:seed
+services:
+  web:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    volumes:
+      - data:/data
+    env_file: .env
+
+  # Plánovač pravidelných kontrol – sdílí stejnou databázi jako web.
+  worker:
+    build: .
+    restart: unless-stopped
+    command: ["npm", "run", "worker"]
+    volumes:
+      - data:/data
+    env_file: .env
+    depends_on:
+      - web
+
+volumes:
+  data:

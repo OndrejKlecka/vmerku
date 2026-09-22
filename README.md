@@ -37,6 +37,24 @@ npm run worker            # e-shopy 6:10 denně, letáky 7:30 ve středu a v sob
 npm run check             # jednorázová kontrola teď (nebo: npm run check leaflet)
 ```
 
+## Nasazení
+
+```bash
+cp .env.example .env          # vyplň SMTP, APP_URL
+docker compose up -d --build
+docker compose exec web npm run db:migrate
+docker compose exec web npm run db:seed
+```
+
+Web běží na portu 3000, plánovač jako druhý kontejner nad stejnou databází.
+Historie cen leží ve svazku `data`, takže přežije redeploy.
+
+Pozn. k hostingu: appka potřebuje běžný Node runtime s diskem a trvale běžícím
+procesem. Cloudflare Workers a podobné edge runtimy nestačí — `better-sqlite3`
+je nativní modul, plánovač je dlouhoběžící proces a parsování velkého letáku se
+nevejde do limitu paměti. Doménu přes Cloudflare směrovat lze, jen na něm nemá
+běžet samotná appka.
+
 ## Struktura
 
 ```
@@ -50,6 +68,7 @@ src/app/                  Přehled, detail produktu, Přidat produkt, Nastavení
 scripts/                  worker, jednorázová kontrola, seed, ukázková data,
                           dump-leaflet.ts (diagnostika parsování letáku)
 tests/                    testy párování, parsování letáku a insightů
+Dockerfile, compose.yaml  nasazení (web + plánovač nad sdílenou databází)
 ```
 
 ### Jedna odchylka od datového modelu v zadání

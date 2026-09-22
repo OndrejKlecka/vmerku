@@ -5,6 +5,7 @@ import {
   type Cell,
   itemsFromCells,
   itemsFromLines,
+  mergeSplitPrices,
   parsePrice,
   parseValidity,
 } from "../src/lib/scrapers/leaflet";
@@ -122,5 +123,52 @@ describe("itemsFromCells", () => {
       validity,
     );
     assert.equal(items.length, 0);
+  });
+});
+
+describe("mergeSplitPrices", () => {
+  it("spojí cenu vysázenou na dvě velikosti písma", () => {
+    const merged = mergeSplitPrices([
+      { text: "89", page: 1, x: 40, width: 70, y: 300 },
+      { text: ",90", page: 1, x: 112, width: 26, y: 312 },
+    ]);
+    assert.equal(merged.length, 1);
+    assert.equal(merged[0].text, "89,90 Kč");
+  });
+
+  it("nespojí čísla, která spolu nesousedí", () => {
+    const merged = mergeSplitPrices([
+      { text: "89", page: 1, x: 40, width: 70, y: 300 },
+      { text: ",90", page: 1, x: 400, width: 26, y: 300 },
+    ]);
+    assert.equal(merged.length, 2);
+  });
+});
+
+describe("itemsFromCells – sazba letáku Lidlu", () => {
+  const validity = { from: new Date(2026, 8, 21), to: new Date(2026, 8, 23) };
+
+  /**
+   * Skutečná sazba z letáku: popis vlevo od ceny u cereálií, vpravo od ceny
+   * u krůtích prsou, a haléře menším písmem na jiném účaří.
+   */
+  const tile: Cell[] = [
+    { text: "NESTLÉ Cereálie", page: 1, x: 30, width: 90, y: 520 },
+    { text: "Super cena", page: 1, x: 30, width: 80, y: 420 },
+    { text: "89", page: 1, x: 32, width: 120, y: 360 },
+    { text: ",90", page: 1, x: 156, width: 40, y: 380 },
+    { text: "Super cena", page: 1, x: 400, width: 80, y: 420 },
+    { text: "199", page: 1, x: 402, width: 160, y: 360 },
+    { text: ",90", page: 1, x: 566, width: 40, y: 380 },
+    { text: "Krůtí prsa", page: 1, x: 616, width: 70, y: 380 },
+  ];
+
+  it("spáruje cenu s popisem vlevo i vpravo od ní", () => {
+    const items = itemsFromCells(tile, validity);
+    const cereals = items.find((i) => i.rawName.includes("Cereálie"));
+    const turkey = items.find((i) => i.rawName.includes("Krůtí"));
+
+    assert.equal(cereals?.price, 89.9);
+    assert.equal(turkey?.price, 199.9);
   });
 });
