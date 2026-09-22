@@ -24,7 +24,7 @@ export default async function ProductPage({
   const range: RangeKey = RANGES.includes(rozsah as RangeKey) ? (rozsah as RangeKey) : "6M";
   const asTable = zobrazeni === "tabulka";
 
-  const detail = getProductDetail(Number(id), range);
+  const detail = await getProductDetail(Number(id), range);
   if (!detail) notFound();
 
   const best = detail.best;

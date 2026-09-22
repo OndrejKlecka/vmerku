@@ -13,10 +13,10 @@ export default async function DashboardPage({
   const { filtr } = await searchParams;
   const onlySales = filtr === "akce";
 
-  const rows = getProductRows();
+  const rows = await getProductRows();
   const salesCount = rows.filter((r) => r.saleCount > 0).length;
   const visible = onlySales ? rows.filter((r) => r.saleCount > 0) : rows;
-  const lastChecked = getLastCheckedAt();
+  const lastChecked = await getLastCheckedAt();
 
   return (
     <>

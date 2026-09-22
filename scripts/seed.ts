@@ -45,17 +45,25 @@ const SEED = [
   },
 ];
 
-const existing = db.select().from(stores).all();
-if (existing.length > 0) {
-  console.info(`Databáze už obsahuje ${existing.length} obchodů – seed přeskočen.`);
-} else {
-  SEED.forEach((store, index) => {
-    db.insert(stores)
-      .values({ ...store, active: true, colorIndex: index % 4 })
-      .run();
-  });
-  console.info(`Založeno ${SEED.length} obchodů.`);
+async function main(): Promise<void> {
+  const existing = await db.select().from(stores).all();
+  if (existing.length > 0) {
+    console.info(`Databáze už obsahuje ${existing.length} obchodů – seed přeskočen.`);
+  } else {
+    for (const [index, store] of SEED.entries()) {
+      await db
+        .insert(stores)
+        .values({ ...store, active: true, colorIndex: index % 4 })
+        .run();
+    }
+    console.info(`Založeno ${SEED.length} obchodů.`);
+  }
+
+  await db.insert(userSettings).values({ id: 1 }).onConflictDoNothing().run();
+  console.info("Hotovo. URL letáků ověř a uprav v Nastavení.");
 }
 
-db.insert(userSettings).values({ id: 1 }).onConflictDoNothing().run();
-console.info("Hotovo. URL letáků ověř a uprav v Nastavení.");
+main().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});

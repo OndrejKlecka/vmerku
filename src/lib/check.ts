@@ -32,14 +32,10 @@ export async function runCheck(
 ): Promise<CheckReport> {
   const report: CheckReport = { checkedStores: [], observations: 0, newSales: 0, warnings: [] };
 
-  const activeStores = db
-    .select()
-    .from(stores)
-    .where(eq(stores.active, true))
-    .all()
+  const activeStores = (await db.select().from(stores).where(eq(stores.active, true)).all())
     .filter((s) => !only || s.kind === only);
 
-  const watched = db.select().from(products).all();
+  const watched = await db.select().from(products).all();
   if (watched.length === 0) return report;
 
   const alerts: SaleAlert[] = [];
@@ -50,20 +46,20 @@ export async function runCheck(
       report.checkedStores.push(store.name);
 
       for (const product of watched) {
-        const match = pickMatch(db, product.id, store.id, items);
+        const match = await pickMatch(db, product.id, store.id, items);
         if (!match) continue;
 
-        recordObservation(db, product.id, store.id, match, now);
+        await recordObservation(db, product.id, store.id, match, now);
         report.observations++;
 
-        const alert = maybeAlert(db, product.id, product.canonicalName, store, match, now);
+        const alert = await maybeAlert(db, product.id, product.canonicalName, store, match, now);
         if (alert) {
           alerts.push(alert);
           report.newSales++;
         }
       }
 
-      db.update(stores).set({ lastCheckedAt: now }).where(eq(stores.id, store.id)).run();
+      await db.update(stores).set({ lastCheckedAt: now }).where(eq(stores.id, store.id)).run();
     } catch (error) {
       report.warnings.push(`${store.name}: ${(error as Error).message}`);
     }
@@ -93,17 +89,17 @@ async function collectStoreItems(
 
     if (result.sourceHash && result.sourceHash === store.lastSourceHash) {
       // Leták se nezměnil – použijeme, co máme uložené z minula.
-      return db
-        .select()
-        .from(storeItems)
-        .where(eq(storeItems.storeId, store.id))
-        .all()
-        .map(toScraped);
+      const stored = await db.select().from(storeItems).where(eq(storeItems.storeId, store.id)).all();
+      return stored.map(toScraped);
     }
 
     if (result.items.length > 0) {
-      replaceStoreItems(db, store.id, result.items, now);
-      db.update(stores).set({ lastSourceHash: result.sourceHash }).where(eq(stores.id, store.id)).run();
+      await replaceStoreItems(db, store.id, result.items, now);
+      await db
+        .update(stores)
+        .set({ lastSourceHash: result.sourceHash })
+        .where(eq(stores.id, store.id))
+        .run();
     }
     return result.items;
   }
@@ -111,7 +107,7 @@ async function collectStoreItems(
   if (!scraper.search) throw new Error("scraper neumí vyhledávat");
 
   // Hledáme pod aliasem, pokud ho pro tenhle obchod známe – trefí to přesněji.
-  const aliases = db
+  const aliases = await db
     .select()
     .from(productStoreAliases)
     .where(
@@ -137,30 +133,33 @@ async function collectStoreItems(
     }
   }
 
-  if (found.length > 0) replaceStoreItems(db, store.id, found, now);
+  if (found.length > 0) await replaceStoreItems(db, store.id, found, now);
   return found;
 }
 
-function replaceStoreItems(db: Db, storeId: number, items: ScrapedItem[], now: Date): void {
-  db.transaction((tx) => {
-    tx.delete(storeItems).where(eq(storeItems.storeId, storeId)).run();
-    for (const item of items) {
-      tx.insert(storeItems)
-        .values({
-          storeId,
-          rawName: item.rawName,
-          normalizedName: normalize(item.rawName),
-          price: item.price,
-          regularPrice: item.regularPrice ?? null,
-          isSale: item.isSale,
-          saleValidFrom: item.saleValidFrom ?? null,
-          saleValidTo: item.saleValidTo ?? null,
-          seenAt: now,
-          sourceRef: item.sourceRef ?? null,
-        })
-        .run();
-    }
-  });
+async function replaceStoreItems(
+  db: Db,
+  storeId: number,
+  items: ScrapedItem[],
+  now: Date,
+): Promise<void> {
+  await db.delete(storeItems).where(eq(storeItems.storeId, storeId)).run();
+  // Vkládáme po dávkách; snapshot obchodu se stejně při každé kontrole přepíše,
+  // takže případné přerušení uprostřed nic trvalého nepoškodí.
+  await db.insert(storeItems).values(
+    items.map((item) => ({
+      storeId,
+      rawName: item.rawName,
+      normalizedName: normalize(item.rawName),
+      price: item.price,
+      regularPrice: item.regularPrice ?? null,
+      isSale: item.isSale,
+      saleValidFrom: item.saleValidFrom ?? null,
+      saleValidTo: item.saleValidTo ?? null,
+      seenAt: now,
+      sourceRef: item.sourceRef ?? null,
+    })),
+  );
 }
 
 function toScraped(row: typeof storeItems.$inferSelect): ScrapedItem {
@@ -180,15 +179,15 @@ function toScraped(row: typeof storeItems.$inferSelect): ScrapedItem {
  * Přednost má potvrzený alias (sekce 2.2); bez něj se sáhne po velmi silné
  * shodě, aby appka fungovala i u obchodů, kde uživatel zatím nic nepotvrdil.
  */
-function pickMatch(
+async function pickMatch(
   db: Db,
   productId: number,
   storeId: number,
   items: ScrapedItem[],
-): ScrapedItem | null {
+): Promise<ScrapedItem | null> {
   if (items.length === 0) return null;
 
-  const aliases = db
+  const aliases = await db
     .select()
     .from(productStoreAliases)
     .where(and(eq(productStoreAliases.productId, productId), eq(productStoreAliases.storeId, storeId)))
@@ -209,7 +208,7 @@ function pickMatch(
 
   if (aliases.length > 0) return null;
 
-  const product = db.select().from(products).where(eq(products.id, productId)).get();
+  const product = await db.select().from(products).where(eq(products.id, productId)).get();
   if (!product) return null;
 
   const best = rankCandidates(product.canonicalName, items, (i) => i.rawName, {
@@ -220,7 +219,8 @@ function pickMatch(
 
   // Automatickou shodu si zapíšeme jako nepotvrzený alias – uživatel ji uvidí
   // v detailu produktu a může ji zrušit.
-  db.insert(productStoreAliases)
+  await db
+    .insert(productStoreAliases)
     .values({
       productId,
       storeId,
@@ -234,14 +234,14 @@ function pickMatch(
   return best[0].item;
 }
 
-function recordObservation(
+async function recordObservation(
   db: Db,
   productId: number,
   storeId: number,
   item: ScrapedItem,
   now: Date,
-): void {
-  const last = db
+): Promise<void> {
+  const last = await db
     .select()
     .from(priceObservations)
     .where(
@@ -257,7 +257,8 @@ function recordObservation(
     if (sameDay) return;
   }
 
-  db.insert(priceObservations)
+  await db
+    .insert(priceObservations)
     .values({
       productId,
       storeId,
@@ -275,20 +276,20 @@ function recordObservation(
  * Vrátí upozornění, jen když položka do akce *nově* spadla a za tuhle akci
  * jsme ještě nepsali (sekce 2.4 – deduplikace přes NotificationLog).
  */
-function maybeAlert(
+async function maybeAlert(
   db: Db,
   productId: number,
   productName: string,
   store: Store,
   item: ScrapedItem,
   now: Date,
-): SaleAlert | null {
+): Promise<SaleAlert | null> {
   if (!item.isSale) return null;
 
   // Klíč akce: buď její vyhlášený začátek, nebo den, kdy jsme ji poprvé viděli.
   const windowStart = item.saleValidFrom ?? startOfDay(now);
 
-  const already = db
+  const already = await db
     .select()
     .from(notificationLog)
     .where(
@@ -301,7 +302,7 @@ function maybeAlert(
     .get();
   if (already) return null;
 
-  const halfYear = db
+  const halfYear = await db
     .select()
     .from(priceObservations)
     .where(
@@ -330,7 +331,7 @@ function maybeAlert(
 async function dispatchAlerts(db: Db, alerts: SaleAlert[], now: Date): Promise<void> {
   if (alerts.length === 0) return;
 
-  const settings = db.select().from(userSettings).where(eq(userSettings.id, 1)).get();
+  const settings = await db.select().from(userSettings).where(eq(userSettings.id, 1)).get();
   if (!settings?.email) {
     console.info("[mail] není nastavená adresa – upozornění se neodesílají.");
     return;
@@ -347,7 +348,8 @@ async function dispatchAlerts(db: Db, alerts: SaleAlert[], now: Date): Promise<v
 
   // Do logu zapisujeme až po odeslání – jinak by se při chybě e-mail ztratil.
   for (const alert of alerts) {
-    db.insert(notificationLog)
+    await db
+      .insert(notificationLog)
       .values({
         productId: alert.productId,
         storeId: alert.storeId,
@@ -359,7 +361,7 @@ async function dispatchAlerts(db: Db, alerts: SaleAlert[], now: Date): Promise<v
   }
 
   if (settings.notifyMode === "daily-digest") {
-    db.update(userSettings).set({ lastDigestAt: now }).where(eq(userSettings.id, 1)).run();
+    await db.update(userSettings).set({ lastDigestAt: now }).where(eq(userSettings.id, 1)).run();
   }
 }
 

@@ -31,19 +31,19 @@ export type ProductRow = {
   trendPercent: number | null;
 };
 
-export function getActiveStores(): Store[] {
+export async function getActiveStores(): Promise<Store[]> {
   return db.select().from(stores).where(eq(stores.active, true)).orderBy(asc(stores.id)).all();
 }
 
-export function getAllStores(): Store[] {
+export async function getAllStores(): Promise<Store[]> {
   return db.select().from(stores).orderBy(asc(stores.id)).all();
 }
 
-export function getSettings() {
-  const existing = db.select().from(userSettings).where(eq(userSettings.id, 1)).get();
+export async function getSettings() {
+  const existing = await db.select().from(userSettings).where(eq(userSettings.id, 1)).get();
   if (existing) return existing;
-  db.insert(userSettings).values({ id: 1 }).onConflictDoNothing().run();
-  return db.select().from(userSettings).where(eq(userSettings.id, 1)).get()!;
+  await db.insert(userSettings).values({ id: 1 }).onConflictDoNothing().run();
+  return (await db.select().from(userSettings).where(eq(userSettings.id, 1)).get())!;
 }
 
 /**
@@ -51,29 +51,31 @@ export function getSettings() {
  * Pozorování se drží i pro obchody, které produkt zrovna nemají v akci –
  * dashboard i detail mají ukazovat všechny hlídané obchody (sekce 2.5).
  */
-export function getProductRows(): ProductRow[] {
-  const activeStores = getActiveStores();
-  const allProducts = db.select().from(products).orderBy(asc(products.canonicalName)).all();
+export async function getProductRows(): Promise<ProductRow[]> {
+  const activeStores = await getActiveStores();
+  const allProducts = await db.select().from(products).orderBy(asc(products.canonicalName)).all();
   if (allProducts.length === 0) return [];
 
-  const aliases = db.select().from(productStoreAliases).all();
+  const aliases = await db.select().from(productStoreAliases).all();
   // Pro trend potřebujeme i starší data, ne jen poslední řádek.
-  const recent = db
+  const recent = await db
     .select()
     .from(priceObservations)
     .where(gte(priceObservations.observedAt, rangeStart("3M")))
     .orderBy(asc(priceObservations.observedAt))
     .all();
 
-  return allProducts.map((product) => {
-    const storeStates: StoreState[] = activeStores.map((store) => {
+  const rows: ProductRow[] = [];
+  for (const product of allProducts) {
+    const storeStates: StoreState[] = [];
+    for (const store of activeStores) {
       const forStore = recent.filter(
         (o) => o.productId === product.id && o.storeId === store.id,
       );
-      const latest = forStore.at(-1) ?? lastObservation(product.id, store.id);
+      const latest = forStore.at(-1) ?? (await lastObservation(product.id, store.id));
       const alias = aliases.find((a) => a.productId === product.id && a.storeId === store.id);
 
-      return {
+      storeStates.push({
         store,
         price: latest?.price ?? null,
         regularPrice: latest?.regularPrice ?? null,
@@ -83,8 +85,8 @@ export function getProductRows(): ProductRow[] {
         observedAt: latest?.observedAt ?? null,
         aliasName: alias?.matchedName ?? null,
         aliasConfirmed: alias?.confirmedByUser ?? false,
-      };
-    });
+      });
+    }
 
     const priced = storeStates.filter((s) => s.price != null);
     const best =
@@ -96,7 +98,7 @@ export function getProductRows(): ProductRow[] {
       ? recent.filter((o) => o.productId === product.id && o.storeId === best.store.id)
       : [];
 
-    return {
+    rows.push({
       id: product.id,
       name: product.canonicalName,
       addedAt: product.addedAt,
@@ -104,8 +106,10 @@ export function getProductRows(): ProductRow[] {
       saleCount: storeStates.filter((s) => s.isSale).length,
       best,
       trendPercent: weeklyTrend(bestHistory),
-    };
-  });
+    });
+  }
+
+  return rows;
 }
 
 export type ProductDetail = {
@@ -120,17 +124,20 @@ export type ProductDetail = {
   seriesStores: Store[];
 };
 
-export function getProductDetail(productId: number, range: RangeKey): ProductDetail | null {
-  const product = db.select().from(products).where(eq(products.id, productId)).get();
+export async function getProductDetail(
+  productId: number,
+  range: RangeKey,
+): Promise<ProductDetail | null> {
+  const product = await db.select().from(products).where(eq(products.id, productId)).get();
   if (!product) return null;
 
-  const rows = getProductRows();
+  const rows = await getProductRows();
   const row = rows.find((r) => r.id === productId);
   const storeStates = row?.storeStates ?? [];
   const best = row?.best ?? null;
 
   const from = rangeStart(range);
-  const observations = db
+  const observations = await db
     .select()
     .from(priceObservations)
     .where(
@@ -173,7 +180,7 @@ export function getProductDetail(productId: number, range: RangeKey): ProductDet
   };
 }
 
-function lastObservation(productId: number, storeId: number) {
+async function lastObservation(productId: number, storeId: number) {
   return db
     .select()
     .from(priceObservations)
@@ -194,8 +201,8 @@ function isActiveSale(
   return endOfDay.getTime() >= Date.now();
 }
 
-export function getLastCheckedAt(): Date | null {
-  const times = getActiveStores()
+export async function getLastCheckedAt(): Promise<Date | null> {
+  const times = (await getActiveStores())
     .map((s) => s.lastCheckedAt)
     .filter((d): d is Date => d != null);
   return times.length > 0 ? new Date(Math.max(...times.map((d) => d.getTime()))) : null;

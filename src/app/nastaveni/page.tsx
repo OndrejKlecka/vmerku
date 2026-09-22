@@ -3,9 +3,9 @@ import { getAllStores, getSettings } from "@/lib/queries";
 
 export const dynamic = "force-dynamic";
 
-export default function SettingsPage() {
-  const settings = getSettings();
-  const stores = getAllStores().map((s) => ({
+export default async function SettingsPage() {
+  const settings = await getSettings();
+  const stores = (await getAllStores()).map((s) => ({
     id: s.id,
     name: s.name,
     kind: s.kind,

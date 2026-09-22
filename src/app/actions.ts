@@ -47,7 +47,7 @@ export async function searchCandidates(
     return { query: trimmed, candidates: [], missingStores: [], warnings: [] };
   }
 
-  const selected = db
+  const selected = await db
     .select()
     .from(stores)
     .where(and(eq(stores.active, true), inArray(stores.id, storeIds.length ? storeIds : [-1])))
@@ -62,17 +62,17 @@ export async function searchCandidates(
 
     try {
       if (store.kind === "weekly-leaflet") {
-        pool = db
+        const stored = await db
           .select()
           .from(storeItems)
           .where(eq(storeItems.storeId, store.id))
-          .all()
-          .map((i) => ({
-            rawName: i.rawName,
-            price: i.price,
-            regularPrice: i.regularPrice,
-            isSale: i.isSale,
-          }));
+          .all();
+        pool = stored.map((i) => ({
+          rawName: i.rawName,
+          price: i.price,
+          regularPrice: i.regularPrice,
+          isSale: i.isSale,
+        }));
         if (pool.length === 0) {
           warnings.push(`${store.name}: zatím nemáme stažený leták.`);
         }
@@ -133,52 +133,54 @@ export async function addProduct(name: string, matches: ConfirmedMatch[]): Promi
   if (!canonicalName) throw new Error("Název produktu nesmí být prázdný.");
 
   const now = new Date();
-  const productId = db.transaction((tx) => {
-    const inserted = tx
-      .insert(products)
-      .values({ canonicalName, addedAt: now })
-      .returning({ id: products.id })
-      .get();
 
-    for (const match of matches) {
-      const matchedName = match.rawName.trim();
-      if (!matchedName) continue;
+  // Produkt zakládáme první; kdyby další zápis selhal, zůstane sice bez aliasů,
+  // ale uživatel ho v appce uvidí a může je doplnit ručně.
+  const inserted = await db
+    .insert(products)
+    .values({ canonicalName, addedAt: now })
+    .returning({ id: products.id })
+    .get();
+  const productId = inserted.id;
 
-      tx.insert(productStoreAliases)
+  for (const match of matches) {
+    const matchedName = match.rawName.trim();
+    if (!matchedName) continue;
+
+    await db
+      .insert(productStoreAliases)
+      .values({
+        productId,
+        storeId: match.storeId,
+        matchedName,
+        confidence: 1,
+        confirmedByUser: true,
+        createdAt: now,
+      })
+      .onConflictDoNothing()
+      .run();
+
+    if (match.price != null) {
+      await db
+        .insert(priceObservations)
         .values({
-          productId: inserted.id,
+          productId,
           storeId: match.storeId,
-          matchedName,
-          confidence: 1,
-          confirmedByUser: true,
-          createdAt: now,
+          observedAt: now,
+          price: match.price,
+          regularPrice: match.regularPrice ?? null,
+          isSale: match.isSale ?? false,
         })
-        .onConflictDoNothing()
         .run();
-
-      if (match.price != null) {
-        tx.insert(priceObservations)
-          .values({
-            productId: inserted.id,
-            storeId: match.storeId,
-            observedAt: now,
-            price: match.price,
-            regularPrice: match.regularPrice ?? null,
-            isSale: match.isSale ?? false,
-          })
-          .run();
-      }
     }
-
-    return inserted.id;
-  });
+  }
 
   revalidatePath("/");
   redirect(`/produkt/${productId}`);
 }
 
 export async function removeProduct(productId: number): Promise<void> {
-  db.delete(products).where(eq(products.id, productId)).run();
+  await db.delete(products).where(eq(products.id, productId)).run();
   revalidatePath("/");
   redirect("/");
 }
@@ -188,7 +190,8 @@ export async function saveSettings(formData: FormData): Promise<void> {
   const notifyMode = formData.get("notifyMode") === "daily-digest" ? "daily-digest" : "instant";
   const includeUnchanged = formData.get("includeUnchanged") === "on";
 
-  db.insert(userSettings)
+  await db
+    .insert(userSettings)
     .values({ id: 1, email, notifyMode, includeUnchanged })
     .onConflictDoUpdate({
       target: userSettings.id,
@@ -201,7 +204,7 @@ export async function saveSettings(formData: FormData): Promise<void> {
 
 /** Zapnutí/vypnutí obchodu. Data se nemažou – jen se přestane hlídat (sekce 2.6). */
 export async function setStoreActive(storeId: number, active: boolean): Promise<void> {
-  db.update(stores).set({ active }).where(eq(stores.id, storeId)).run();
+  await db.update(stores).set({ active }).where(eq(stores.id, storeId)).run();
   revalidatePath("/nastaveni");
   revalidatePath("/");
 }
@@ -215,9 +218,10 @@ export async function addStore(formData: FormData): Promise<void> {
   if (!name || !sourceUrl) throw new Error("Vyplň název i URL zdroje.");
   new URL(sourceUrl); // rychlá validace, ať se do DB nedostane nesmysl
 
-  const used = db.select().from(stores).all().length;
+  const used = (await db.select().from(stores).all()).length;
 
-  db.insert(stores)
+  await db
+    .insert(stores)
     .values({
       name,
       kind,
@@ -234,7 +238,8 @@ export async function addStore(formData: FormData): Promise<void> {
 
 /** Ruční potvrzení aliasu z detailu produktu (když appka spárovala sama). */
 export async function confirmAlias(aliasId: number): Promise<void> {
-  db.update(productStoreAliases)
+  await db
+    .update(productStoreAliases)
     .set({ confirmedByUser: true, confidence: 1 })
     .where(eq(productStoreAliases.id, aliasId))
     .run();

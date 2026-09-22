@@ -43,89 +43,101 @@ const DEMO = [
 const now = new Date();
 const DAYS = 180;
 
-for (const demo of DEMO) {
-  const existing = db
-    .select()
-    .from(products)
-    .where(eq(products.canonicalName, demo.name))
-    .get();
-  if (existing) {
-    console.info(`„${demo.name}“ už existuje – přeskakuji.`);
-    continue;
-  }
+async function main(): Promise<void> {
 
-  const addedAt = new Date(now);
-  addedAt.setDate(addedAt.getDate() - DAYS);
+  for (const demo of DEMO) {
+    const existing = await db
+      .select()
+      .from(products)
+      .where(eq(products.canonicalName, demo.name))
+      .get();
+    if (existing) {
+      console.info(`„${demo.name}“ už existuje – přeskakuji.`);
+      continue;
+    }
 
-  const product = db
-    .insert(products)
-    .values({ canonicalName: demo.name, addedAt })
-    .returning({ id: products.id })
-    .get();
+    const addedAt = new Date(now);
+    addedAt.setDate(addedAt.getDate() - DAYS);
 
-  for (const [storeName, config] of Object.entries(demo.perStore)) {
-    const store = db.select().from(stores).where(eq(stores.name, storeName)).get();
-    if (!store) continue;
+    const product = await db
+      .insert(products)
+      .values({ canonicalName: demo.name, addedAt })
+      .returning({ id: products.id })
+      .get();
 
-    db.insert(productStoreAliases)
-      .values({
-        productId: product.id,
-        storeId: store.id,
-        matchedName: config.alias,
-        confidence: 1,
-        confirmedByUser: true,
-        createdAt: addedAt,
-      })
-      .run();
+    for (const [storeName, config] of Object.entries(demo.perStore)) {
+      const store = await db.select().from(stores).where(eq(stores.name, storeName)).get();
+      if (!store) continue;
 
-    // Historie po týdnech: běžná cena s drobným kolísáním a občasná akce.
-    for (let day = DAYS; day >= 0; day -= 7) {
-      const observedAt = new Date(now);
-      observedAt.setDate(observedAt.getDate() - day);
-
-      const wobble = 1 + Math.sin((day / 7) * 1.3 + storeName.length) * 0.04;
-      const occasionalSale = day > 7 && day % 42 < 7;
-      const price = occasionalSale
-        ? Math.round(config.base * 0.78 * 10) / 10
-        : Math.round(config.base * wobble * 10) / 10;
-
-      db.insert(priceObservations)
+      await db
+        .insert(productStoreAliases)
         .values({
           productId: product.id,
           storeId: store.id,
-          observedAt,
-          price,
-          regularPrice: occasionalSale ? config.base : null,
-          isSale: occasionalSale,
+          matchedName: config.alias,
+          confidence: 1,
+          confirmedByUser: true,
+          createdAt: addedAt,
+        })
+        .run();
+
+      // Historie po týdnech: běžná cena s drobným kolísáním a občasná akce.
+      for (let day = DAYS; day >= 0; day -= 7) {
+        const observedAt = new Date(now);
+        observedAt.setDate(observedAt.getDate() - day);
+
+        const wobble = 1 + Math.sin((day / 7) * 1.3 + storeName.length) * 0.04;
+        const occasionalSale = day > 7 && day % 42 < 7;
+        const price = occasionalSale
+          ? Math.round(config.base * 0.78 * 10) / 10
+          : Math.round(config.base * wobble * 10) / 10;
+
+        await db
+          .insert(priceObservations)
+          .values({
+            productId: product.id,
+            storeId: store.id,
+            observedAt,
+            price,
+            regularPrice: occasionalSale ? config.base : null,
+            isSale: occasionalSale,
+          })
+          .run();
+      }
+
+      // Aktuální stav – tady se rozhoduje, co dashboard ukáže jako „v akci“.
+      const validFrom = new Date(now);
+      validFrom.setDate(validFrom.getDate() - 2);
+      const validTo = new Date(now);
+      validTo.setDate(validTo.getDate() + 4);
+
+      await db
+        .insert(priceObservations)
+        .values({
+          productId: product.id,
+          storeId: store.id,
+          observedAt: now,
+          price: config.sale ?? config.base,
+          regularPrice: config.sale ? config.base : null,
+          isSale: config.sale != null,
+          saleValidFrom: config.sale ? validFrom : null,
+          saleValidTo: config.sale ? validTo : null,
         })
         .run();
     }
 
-    // Aktuální stav – tady se rozhoduje, co dashboard ukáže jako „v akci“.
-    const validFrom = new Date(now);
-    validFrom.setDate(validFrom.getDate() - 2);
-    const validTo = new Date(now);
-    validTo.setDate(validTo.getDate() + 4);
-
-    db.insert(priceObservations)
-      .values({
-        productId: product.id,
-        storeId: store.id,
-        observedAt: now,
-        price: config.sale ?? config.base,
-        regularPrice: config.sale ? config.base : null,
-        isSale: config.sale != null,
-        saleValidFrom: config.sale ? validFrom : null,
-        saleValidTo: config.sale ? validTo : null,
-      })
-      .run();
+    console.info(`Založen ukázkový produkt „${demo.name}“.`);
   }
 
-  console.info(`Založen ukázkový produkt „${demo.name}“.`);
+  // Ať dashboard neukazuje „zatím nekontrolováno“.
+  for (const store of await db.select().from(stores).all()) {
+    await db.update(stores).set({ lastCheckedAt: now }).where(eq(stores.id, store.id)).run();
+  }
+  console.info("Hotovo.");
+
 }
 
-// Ať dashboard neukazuje „zatím nekontrolováno“.
-for (const store of db.select().from(stores).all()) {
-  db.update(stores).set({ lastCheckedAt: now }).where(eq(stores.id, store.id)).run();
-}
-console.info("Hotovo.");
+main().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});

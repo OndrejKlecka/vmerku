@@ -3,8 +3,8 @@ import { getActiveStores } from "@/lib/queries";
 
 export const dynamic = "force-dynamic";
 
-export default function AddProductPage() {
-  const stores = getActiveStores().map((s) => ({ id: s.id, name: s.name }));
+export default async function AddProductPage() {
+  const stores = (await getActiveStores()).map((s) => ({ id: s.id, name: s.name }));
 
   return (
     <>
