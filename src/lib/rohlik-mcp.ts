@@ -149,6 +149,22 @@ export async function rohlikStatus(db: Db): Promise<RohlikStatus> {
  * První krok přihlášení. Vrátí adresu přihlašovací stránky Rohlíku.
  * `fresh` zahodí i registraci klienta – pro přihlášení jiným účtem.
  */
+/**
+ * fetch s časovým limitem pro přihlašování: bez něj by zaseknuté spojení
+ * nechalo uživatele věčně koukat na točící se kolečko.
+ */
+const LOGIN_TIMEOUT_MS = 15_000;
+async function fetchWithTimeout(input: string | URL, init?: RequestInit): Promise<Response> {
+  const url = String(input);
+  try {
+    return await fetch(input, { ...init, signal: AbortSignal.timeout(LOGIN_TIMEOUT_MS) });
+  } catch (error) {
+    const reason = (error as Error).name === "TimeoutError" ? "neodpověděl do 15 s" : (error as Error).message;
+    console.error(`[rohlik] ${url}: ${reason}`, error);
+    throw new Error(`Server Rohlíku (${new URL(url).host}) ${reason}. Adresa: ${url}`);
+  }
+}
+
 export async function startRohlikLogin(
   db: Db,
   redirectUrl: string,
@@ -168,7 +184,7 @@ export async function startRohlikLogin(
   });
 
   const provider = new DbAuthProvider(db, await loadRow(db), redirectUrl);
-  const result = await auth(provider, { serverUrl: ROHLIK_MCP_URL });
+  const result = await auth(provider, { serverUrl: ROHLIK_MCP_URL, fetchFn: fetchWithTimeout });
   if (result === "AUTHORIZED") throw new Error("Rohlík přihlášení nevyžádal – zkus to znovu.");
   if (!provider.authorizationUrl) throw new Error("Rohlík nevrátil přihlašovací stránku.");
 
@@ -187,7 +203,11 @@ export async function finishRohlikLogin(db: Db, code: string, state: string | nu
   if (!row.redirectUrl) throw new Error("Chybí návratová adresa, začni přihlášení znovu.");
 
   const provider = new DbAuthProvider(db, row, row.redirectUrl);
-  await auth(provider, { serverUrl: ROHLIK_MCP_URL, authorizationCode: code });
+  await auth(provider, {
+    serverUrl: ROHLIK_MCP_URL,
+    authorizationCode: code,
+    fetchFn: fetchWithTimeout,
+  });
   await saveRow(db, { state: null, codeVerifier: null });
 }
 
