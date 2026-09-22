@@ -19,7 +19,7 @@ export function Nav() {
       <header className="topbar">
         <div className="topbar-inner">
           <Link href="/" className="wordmark">
-            Hlídač akcí
+            V merku
           </Link>
           <nav className="topnav">
             {ITEMS.map((item) => (

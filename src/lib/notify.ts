@@ -23,7 +23,7 @@ export async function sendMail(to: string, mail: MailPayload): Promise<void> {
   });
 
   await transport.sendMail({
-    from: process.env.SMTP_FROM ?? "Hlídač akcí <hlidac@localhost>",
+    from: process.env.SMTP_FROM ?? "V merku <hlidac@localhost>",
     to,
     subject: mail.subject,
     text: mail.text,

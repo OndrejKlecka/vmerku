@@ -12,7 +12,7 @@ const plex = IBM_Plex_Sans({
 });
 
 export const metadata: Metadata = {
-  title: "Hlídač akcí",
+  title: "V merku",
   description: "Hlídá slevy na vybrané produkty na Rohlíku a v letácích řetězců.",
 };
 
