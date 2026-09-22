@@ -20,7 +20,8 @@
     "cf:dev": "wrangler dev",
     "cf:deploy": "wrangler deploy",
     "cf:migrate": "wrangler d1 migrations apply vmerku --remote",
-    "cf:secrets": "wrangler secret bulk"
+    "cf:secrets": "wrangler secret bulk",
+    "cf:release": "npm run cf:migrate && wrangler deploy"
   },
   "dependencies": {
     "better-sqlite3": "^13.0.3",

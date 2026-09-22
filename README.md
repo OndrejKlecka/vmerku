@@ -58,9 +58,7 @@ o hodinu dřív.
 
 1. **Databáze.** V dashboardu Cloudflare → Storage & Databases → D1 → Create
    database, jméno `vmerku`. Zkopíruj Database ID do `wrangler.jsonc`.
-2. **Schéma.** Ve stejném dashboardu má databáze záložku Console. Vlož do ní
-   obsah `drizzle/0000_striped_taskmaster.sql` a spusť. (Kdo má po ruce Node,
-   udělá totéž přes `npm run cf:migrate`.)
+2. **Schéma.** Nic ručně — zavádí ho nasazení, viz deploy command níž.
 3. **Tajemství.** Workers & Pages → vmerku → Settings → Variables and Secrets:
    `CHECK_TOKEN` (libovolný náhodný řetězec) a SMTP údaje `SMTP_HOST`,
    `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM`. Worker je předá do
@@ -81,7 +79,10 @@ počítači není potřeba nic instalovat. V nastavení workeru (Settings → Bu
   dělat, appku si staví Dockerfile uvnitř obrazu. Testy sem nepatří —
   prostředí Workers Builds nepřekládá nativní moduly, takže by testy nad
   better-sqlite3 spadly; od toho je GitHub Actions.
-- **Deploy command:** `npx wrangler deploy` (výchozí).
+- **Deploy command:** `npm run cf:release`. Oproti výchozímu
+  `npx wrangler deploy` navíc zavede do D1 chybějící migrace, takže se
+  schéma databáze nikdy nerozejde s kódem, který se nasazuje. Když žádná
+  migrace nechybí, krok neudělá nic.
 
 Pozor, `npx wrangler deploy` se chová podle `wrangler.jsonc`. Když ho ve větvi
 nenajde, spustí místo toho průvodce, který projekt překope na OpenNext a
@@ -89,9 +90,9 @@ nasadí appku jako čistý Worker — tedy přesně to, co kvůli parsování PD
 nefunguje. Když deploy skončí chybou o `WORKER_SELF_REFERENCE`, staví se
 větev bez `wrangler.jsonc`.
 
-Kdo má Node a Docker, nasadí i z příkazové řádky: `npm run cf:migrate` a
-`npm run cf:deploy`. GitHub Actions (`.github/workflows/kontrola.yml`) jen
-kontroluje typy a pouští testy, nenasazuje.
+Kdo má Node a Docker, nasadí i z příkazové řádky přes `npm run cf:release`.
+GitHub Actions (`.github/workflows/kontrola.yml`) jen kontroluje typy a pouští
+testy, nenasazuje.
 
 ### Cena
 
