@@ -12,6 +12,8 @@ export * from "./types";
  */
 const byHost: Record<string, Scraper> = {
   "rohlik.cz": rohlikScraper,
+  // rohlík.cz s čárkou (tak ho lidi píšou) – v URL je to punycode.
+  "xn--rohlk-2sa.cz": rohlikScraper,
 };
 
 export function scraperFor(store: Store): Scraper {
