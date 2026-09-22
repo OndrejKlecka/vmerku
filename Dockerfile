@@ -2,8 +2,13 @@
 # (výchozí je web, plánovač se pouští jako druhý kontejner s `npm run worker`).
 FROM node:22-slim AS deps
 WORKDIR /app
-# better-sqlite3 si pro linux/amd64 stáhne hotovou binárku; když by chyběla,
-# doinstaluj sem python3, make a g++ a nech ji přeložit.
+# better-sqlite3 je nativní modul. Hotovou binárku pro každou verzi Node
+# nemá, a když chybí, překládá se ze zdrojáků — k tomu potřebuje python3,
+# make a g++. Instalujeme je jen v téhle fázi; do výsledného obrazu se
+# kopíruje až přeložený node_modules, nástroje v něm nezůstanou.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends python3 make g++ \
+ && rm -rf /var/lib/apt/lists/*
 COPY package.json package-lock.json ./
 RUN npm ci
 
