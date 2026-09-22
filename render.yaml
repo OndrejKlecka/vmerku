@@ -1,0 +1,33 @@
+# Nasazení na Render: v prohlížeči zvol "New > Blueprint" a ukaž na tenhle
+# repozitář. Build běží z Dockerfilu, historie cen leží na disku /data.
+services:
+  - type: web
+    name: vmerku
+    runtime: docker
+    plan: starter
+    region: frankfurt
+    healthCheckPath: /
+    disk:
+      name: data
+      mountPath: /data
+      sizeGB: 1
+    envVars:
+      - key: DATABASE_PATH
+        value: /data/v-merku.db
+      - key: TZ
+        value: Europe/Prague
+      # Jeden kontejner = jeden disk, takže plánovač běží uvnitř appky.
+      - key: SCHEDULER_IN_PROCESS
+        value: "1"
+      - key: APP_URL
+        sync: false
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        sync: false
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASS
+        sync: false
+      - key: SMTP_FROM
+        sync: false

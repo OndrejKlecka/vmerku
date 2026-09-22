@@ -39,6 +39,14 @@ npm run check             # jednorázová kontrola teď (nebo: npm run check lea
 
 ## Nasazení
 
+Nejjednodušší cesta je Render: v prohlížeči zvol **New > Blueprint**, ukaž na
+tenhle repozitář a zbytek si přečte z `render.yaml`. Build jede z Dockerfilu,
+databáze leží na disku `/data` a plánovač běží uvnitř appky
+(`SCHEDULER_IN_PROCESS=1`), protože jeden kontejner umí připojit jen jeden disk.
+Doménu pak stačí nasměrovat přes Cloudflare na adresu, kterou Render přidělí.
+
+Na vlastním serveru s Dockerem:
+
 ```bash
 cp .env.example .env          # vyplň SMTP, APP_URL
 docker compose up -d --build
