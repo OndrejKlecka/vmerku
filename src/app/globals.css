@@ -1,0 +1,757 @@
+/*
+ * Design tokeny – Varianta B (světlá/modrá), sekce 5 zadání.
+ * Barva má jeden význam: modrá = interaktivní, zelená = „je to sleva“,
+ * šedá = neutrální informace. Nikdy nezaměňovat.
+ */
+:root {
+  --ink: #171a21;
+  --paper: #f3f4f7;
+  --surface: #ffffff;
+  --surface-2: #f0f1f4;
+  --line: #e3e5ea;
+  --line-strong: #c9cdd6;
+  --muted: #666c78;
+  --muted-dim: #9aa0ac;
+
+  --accent: #1f63b8;
+  --accent-ink: #ffffff;
+
+  --status: #15803d;
+  --status-soft: rgba(21, 128, 61, 0.1);
+  --status-text: #15803d;
+
+  --tag-bg: #eef0f3;
+  --grid: #e7e9ed;
+
+  --series-1: #2a78d6;
+  --series-2: #eb6834;
+  --series-3: #1baf7a;
+  --series-4: #eda100;
+
+  --radius-pill: 8px;
+  --radius-card: 10px;
+  --radius-sm: 6px;
+  --radius-input: 8px;
+
+  /* Minimální dotyková plocha na mobilu – sekce 6. */
+  --touch: 44px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-plex), "IBM Plex Sans", system-ui, -apple-system, sans-serif;
+  font-size: 15px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+}
+
+a {
+  color: var(--accent);
+}
+
+button,
+input,
+select {
+  font: inherit;
+  color: inherit;
+}
+
+/* ---------- layout ---------- */
+
+.shell {
+  max-width: 880px;
+  margin: 0 auto;
+  padding: 0 16px 96px;
+}
+
+.topbar {
+  border-bottom: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.topbar-inner {
+  max-width: 880px;
+  margin: 0 auto;
+  padding: 0 16px;
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  min-height: 56px;
+}
+
+.wordmark {
+  font-weight: 700;
+  font-size: 16px;
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.topnav {
+  display: flex;
+  gap: 4px;
+  margin-left: auto;
+}
+
+.topnav a {
+  padding: 8px 12px;
+  border-radius: var(--radius-pill);
+  color: var(--muted);
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.topnav a[aria-current="page"] {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+/* Spodní navigace na mobilu – sekce 4.5. */
+.bottomnav {
+  display: none;
+}
+
+@media (max-width: 640px) {
+  .topnav {
+    display: none;
+  }
+
+  .bottomnav {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    position: fixed;
+    inset: auto 0 0 0;
+    background: var(--surface);
+    border-top: 1px solid var(--line);
+    padding-bottom: env(safe-area-inset-bottom);
+    z-index: 20;
+  }
+
+  .bottomnav a {
+    min-height: var(--touch);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    padding: 8px 0;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--muted);
+    text-decoration: none;
+  }
+
+  .bottomnav a[aria-current="page"] {
+    color: var(--accent);
+  }
+}
+
+/* ---------- obecné prvky ---------- */
+
+.page-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 24px 0 16px;
+}
+
+h1 {
+  font-size: 22px;
+  font-weight: 700;
+  margin: 0;
+}
+
+h2 {
+  font-size: 16px;
+  font-weight: 600;
+  margin: 0 0 12px;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.dim {
+  color: var(--muted-dim);
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  padding: 16px;
+}
+
+.section {
+  margin-bottom: 20px;
+}
+
+.back {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: var(--touch);
+  color: var(--muted);
+  text-decoration: none;
+  font-weight: 500;
+}
+
+/* tlačítka */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: var(--touch);
+  padding: 0 16px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--line-strong);
+  background: var(--surface);
+  color: var(--ink);
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.btn-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-quiet {
+  border-color: transparent;
+  background: transparent;
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.btn-block {
+  width: 100%;
+}
+
+/* vstupy */
+.input {
+  width: 100%;
+  min-height: var(--touch);
+  padding: 0 12px;
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-input);
+}
+
+.input::placeholder {
+  color: var(--muted-dim);
+}
+
+.input:focus-visible,
+.btn:focus-visible,
+.chip:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.field {
+  display: block;
+  margin-bottom: 16px;
+}
+
+.field-label {
+  display: block;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+
+/* chipy a štítky */
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 0 12px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--line-strong);
+  background: var(--surface-2);
+  color: var(--muted);
+  cursor: pointer;
+  font-weight: 500;
+}
+
+.chip[aria-pressed="true"] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+}
+
+/* Pill za obchod v seznamu produktů. Zvýrazněná = tam je akce. */
+.store-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 9px;
+  border-radius: var(--radius-sm);
+  background: var(--tag-bg);
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.store-pill.on-sale {
+  background: var(--status-soft);
+  color: var(--status-text);
+  font-weight: 600;
+}
+
+.store-pill .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--status);
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 9px;
+  border-radius: var(--radius-sm);
+  background: var(--tag-bg);
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.badge-sale {
+  background: var(--status-soft);
+  color: var(--status-text);
+}
+
+/* ---------- dashboard ---------- */
+
+.stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.stat {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  padding: 14px 16px;
+}
+
+.stat-value {
+  font-size: 24px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.stat-value.small {
+  font-size: 16px;
+  padding-top: 5px;
+}
+
+.stat-label {
+  color: var(--muted);
+  font-size: 13px;
+  margin-top: 2px;
+}
+
+@media (max-width: 640px) {
+  .stats {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .stat:last-child {
+    grid-column: span 2;
+  }
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.toolbar .btn {
+  margin-left: auto;
+}
+
+.product-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.product-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 12px;
+  align-items: start;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  padding: 14px 16px;
+  min-height: var(--touch);
+  text-decoration: none;
+  color: inherit;
+}
+
+.product-name {
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.product-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.product-price {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.price-value {
+  font-size: 19px;
+  font-weight: 700;
+}
+
+.price-value.sale {
+  color: var(--status-text);
+}
+
+.price-meta {
+  color: var(--muted);
+  font-size: 13px;
+  margin-top: 2px;
+}
+
+.trend-down {
+  color: var(--status-text);
+}
+
+.empty {
+  background: var(--surface);
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--radius-card);
+  padding: 32px 16px;
+  text-align: center;
+  color: var(--muted);
+}
+
+/* ---------- detail produktu ---------- */
+
+.hero {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  padding: 18px;
+  margin-bottom: 20px;
+}
+
+.hero-label {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.hero-price {
+  font-size: 32px;
+  font-weight: 700;
+  line-height: 1.15;
+  margin: 6px 0 2px;
+}
+
+.hero-price.sale {
+  color: var(--status-text);
+}
+
+.hero-meta {
+  color: var(--muted);
+}
+
+.hero-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+table.compare {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+table.compare th {
+  text-align: left;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+  padding: 0 8px 8px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+table.compare td {
+  padding: 12px 8px 12px 0;
+  border-bottom: 1px solid var(--line);
+  vertical-align: middle;
+}
+
+table.compare tr.is-sale td {
+  background: var(--status-soft);
+}
+
+table.compare td:first-child,
+table.compare th:first-child {
+  padding-left: 8px;
+}
+
+.store-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 8px;
+}
+
+/* Na mobilu se tabulka mění v karty – sekce 4.5. */
+.store-cards {
+  display: none;
+  flex-direction: column;
+  gap: 10px;
+}
+
+@media (max-width: 640px) {
+  .compare-wrap {
+    display: none;
+  }
+
+  .store-cards {
+    display: flex;
+  }
+}
+
+.store-card {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  padding: 14px;
+  background: var(--surface);
+}
+
+.store-card.is-sale {
+  border-color: var(--status);
+  background: var(--status-soft);
+}
+
+.store-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 4px;
+}
+
+.insights {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+
+@media (max-width: 640px) {
+  .insights {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .insights .stat:last-child {
+    grid-column: span 2;
+  }
+}
+
+.range-switch {
+  display: flex;
+  gap: 4px;
+  margin-left: auto;
+}
+
+.range-switch a {
+  min-height: 36px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 12px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-2);
+  color: var(--muted);
+  text-decoration: none;
+  font-weight: 500;
+  font-size: 14px;
+}
+
+.range-switch a[aria-current="true"] {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+.chart-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 12px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.legend-swatch {
+  width: 12px;
+  height: 3px;
+  border-radius: 2px;
+}
+
+/* ---------- přidat produkt ---------- */
+
+.match-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  cursor: pointer;
+  min-height: var(--touch);
+}
+
+.match-row.selected {
+  border-color: var(--accent);
+}
+
+.match-row input[type="checkbox"] {
+  width: 20px;
+  height: 20px;
+  margin-top: 2px;
+  accent-color: var(--accent);
+  flex-shrink: 0;
+}
+
+.match-store {
+  display: block;
+  font-size: 13px;
+  color: var(--muted);
+  margin-bottom: 2px;
+}
+
+.match-name {
+  display: block;
+}
+
+.match-name {
+  font-weight: 600;
+}
+
+.match-right {
+  margin-left: auto;
+  text-align: right;
+  white-space: nowrap;
+}
+
+/* Na desktopu obyčejná lišta na konci, na mobilu přilepená dole – sekce 4.5. */
+.sticky-bar {
+  padding: 12px 0;
+  margin-top: 16px;
+}
+
+@media (max-width: 640px) {
+  .sticky-bar {
+    position: fixed;
+    inset: auto 0 0 0;
+    bottom: calc(var(--touch) + env(safe-area-inset-bottom));
+    padding: 12px 16px;
+    border-top: 1px solid var(--line);
+    background: var(--surface);
+    z-index: 10;
+  }
+}
+
+/* ---------- nastavení ---------- */
+
+.settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line);
+  min-height: var(--touch);
+}
+
+.settings-row:last-child {
+  border-bottom: none;
+}
+
+.radio-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: var(--touch);
+  cursor: pointer;
+}
+
+.radio-row input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--accent);
+}
+
+.notice {
+  background: var(--surface-2);
+  border-radius: var(--radius-sm);
+  padding: 12px;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.error {
+  color: #b42318;
+  font-size: 14px;
+  margin-top: 8px;
+}
