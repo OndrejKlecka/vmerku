@@ -39,7 +39,9 @@ export default async function SettingsPage({
 
       <SettingsForm settings={settings} stores={stores} />
 
-      <RohlikSection status={status} flash={flash} />
+      {/* Rohlík pouští MCP jen z běžných aplikací, ze serveru ho blokuje
+          ochrana proti robotům. Karta zůstává schovaná, dokud to Rohlík nepovolí. */}
+      {process.env.ROHLIK_MCP_ENABLED === "1" && <RohlikSection status={status} flash={flash} />}
 
       <section className="section">
         <div className="notice">
