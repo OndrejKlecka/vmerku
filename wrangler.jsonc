@@ -29,7 +29,7 @@
     {
       "binding": "DB",
       "database_name": "vmerku",
-      "database_id": "DOPLN_ID_Z_WRANGLER_D1_CREATE",
+      "database_id": "9ed787bf-b676-4496-8a29-1d4979ee3aa2",
       // drizzle-kit sem generuje SQL; wrangler bere jen `*.sql`, podsložku
       // `meta/` ignoruje, takže obě nástroje žijí ve stejné složce.
       "migrations_dir": "drizzle"
@@ -43,7 +43,7 @@
   },
 
   "vars": {
-    "APP_URL": "https://vmerku.example.com"
+    "APP_URL": "https://vmerku.vandays.cz"
   },
 
   "observability": { "enabled": true }
