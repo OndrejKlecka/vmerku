@@ -13,6 +13,10 @@ import { Container, getContainer, type OutboundHandler } from "@cloudflare/conta
 
 import { d1Proxy } from "./d1-proxy";
 
+// Outbound handlery (most k D1) běží přes ContainerProxy; knihovna ho hledá
+// mezi exporty workeru, jinak kontejner vůbec nenastartuje.
+export { ContainerProxy } from "@cloudflare/containers";
+
 export type Env = {
   HLIDAC: DurableObjectNamespace<VmerkuContainer>;
   DB: D1Database;
