@@ -11,6 +11,7 @@ import { normalize } from "@/lib/match";
 import {
   downloadLeafletPdf,
   extractCells,
+  isGarbled,
   itemsFromCells,
   parseValidity,
 } from "@/lib/scrapers/leaflet";
