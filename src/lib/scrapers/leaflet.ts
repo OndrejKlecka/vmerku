@@ -460,11 +460,16 @@ export const leafletScraper: Scraper = {
 
     // Zadaná je stránka s letákem, ne samotné PDF: odkaz na aktuální najdeme v ní.
     if ((res.headers.get("content-type") ?? "").includes("html")) {
-      const link = findPdfLink(await res.text());
-      if (!link)
+      const hint =
+        decodeURIComponent(new URL(store.sourceUrl).hash.slice(1)) || undefined;
+      const link = findPdfLink(await res.text(), hint);
+      if (!link) {
         throw new Error(
-          `${store.name}: na stránce ${store.sourceUrl} není odkaz na PDF letáku.`,
+          hint
+            ? `${store.name}: na stránce není PDF letáku obsahující „${hint}“.`
+            : `${store.name}: na stránce ${store.sourceUrl} není odkaz na PDF letáku.`,
         );
+      }
       res = await fetchLeaflet(link);
       if (!res.ok)
         throw new Error(`${store.name}: leták ${link} vrátil ${res.status}`);

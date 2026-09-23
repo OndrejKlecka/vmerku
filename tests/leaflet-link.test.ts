@@ -27,3 +27,28 @@ test("leták má přednost před jiným PDF", () => {
 test("bez PDF vrátí null", () => {
   assert.equal(findPdfLink("<p>nic</p>"), null);
 });
+
+test("s nápovědou vybere hypermarket mezi víc letáky", () => {
+  const sm = TESCO.replace("HM-CHM", "SM-CSM");
+  const html = `<a href="${sm}">a</a><a href="${TESCO}">b</a>`;
+  assert.equal(findPdfLink(html, "HM-CHM"), TESCO);
+  assert.equal(findPdfLink(html, "neexistuje"), null);
+});
+
+test("Tesco: z dat stránky vezme leták, který platí teď", () => {
+  const next = TESCO.replace(
+    "20260923062713427_2026_P30",
+    "20260930000000000_2026_P31",
+  );
+  const html =
+    `{"Leaflet:705":{"slug":"a","leafletUrl":"${TESCO}","countryId":2,"validFrom":"2026-09-23T06:00:00.000Z","validTo":"2026-09-29T21:59:59.000Z","type":"HM"},` +
+    `"Leaflet:706":{"slug":"b","leafletUrl":"${next}","countryId":2,"validFrom":"2026-09-30T06:00:00.000Z","validTo":"2026-10-06T21:59:59.000Z","type":"HM"}}`;
+  assert.equal(
+    findPdfLink(html, undefined, new Date("2026-09-25T10:00:00Z")),
+    TESCO,
+  );
+  assert.equal(
+    findPdfLink(html, undefined, new Date("2026-10-01T10:00:00Z")),
+    next,
+  );
+});
