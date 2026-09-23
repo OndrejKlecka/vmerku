@@ -12,6 +12,7 @@
 import { Container, getContainer, type OutboundHandler } from "@cloudflare/containers";
 
 import { d1Proxy } from "./d1-proxy";
+import { passwordGate } from "./heslo";
 import { httpsRedirect } from "./https";
 
 // Outbound handlery (most k D1) běží přes ContainerProxy; knihovna ho hledá
@@ -22,6 +23,8 @@ export type Env = {
   HLIDAC: DurableObjectNamespace<VmerkuContainer>;
   DB: D1Database;
   CHECK_TOKEN: string;
+  /** Rodinné heslo před appkou (viz worker/heslo.ts); do kontejneru nejde. */
+  APP_PASSWORD?: string;
   APP_URL?: string;
   SMTP_HOST?: string;
   SMTP_PORT?: string;
@@ -73,7 +76,8 @@ VmerkuContainer.outboundByHost = {
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
-    return httpsRedirect(request) ?? getContainer(env.HLIDAC, INSTANCE).fetch(request);
+    const early = httpsRedirect(request) ?? (await passwordGate(request, env));
+    return early ?? getContainer(env.HLIDAC, INSTANCE).fetch(request);
   },
 
   async scheduled(controller: ScheduledController, env: Env): Promise<void> {
