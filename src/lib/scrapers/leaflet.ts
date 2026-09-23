@@ -14,6 +14,7 @@
  * z proměnné OCR_COMMAND (např. `ocrmypdf --force-ocr -l ces {in} {out}`).
  * Když není nastavená, scraper to nahlásí jako warning a leták přeskočí.
  */
+import { findPdfLink } from "./leaflet-link";
 import { execFile } from "node:child_process";
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
@@ -22,7 +23,12 @@ import path from "node:path";
 import { promisify } from "node:util";
 
 import type { Store } from "@/db/schema";
-import { type ScrapedItem, type ScrapeResult, type Scraper, USER_AGENT } from "./types";
+import {
+  type ScrapedItem,
+  type ScrapeResult,
+  type Scraper,
+  USER_AGENT,
+} from "./types";
 
 const execFileAsync = promisify(execFile);
 
@@ -53,7 +59,10 @@ export type Line = { text: string; page: number };
  */
 export async function extractCells(pdf: Buffer): Promise<Cell[]> {
   const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
-  const task = pdfjs.getDocument({ data: new Uint8Array(pdf), useSystemFonts: true });
+  const task = pdfjs.getDocument({
+    data: new Uint8Array(pdf),
+    useSystemFonts: true,
+  });
   const doc = await task.promise;
 
   const cells: Cell[] = [];
@@ -72,7 +81,11 @@ export async function extractCells(pdf: Buffer): Promise<Cell[]> {
       if (!("str" in item) || !item.str.trim()) continue;
       const y = Math.round((item.transform[5] as number) / 4) * 4;
       const row = rows.get(y) ?? [];
-      row.push({ x: item.transform[4] as number, width: item.width, str: item.str });
+      row.push({
+        x: item.transform[4] as number,
+        width: item.width,
+        str: item.str,
+      });
       rows.set(y, row);
     }
 
@@ -82,7 +95,11 @@ export async function extractCells(pdf: Buffer): Promise<Cell[]> {
       let current: Fragment[] = [];
       const flush = () => {
         if (current.length === 0) return;
-        const text = current.map((f) => f.str).join(" ").replace(/\s+/g, " ").trim();
+        const text = current
+          .map((f) => f.str)
+          .join(" ")
+          .replace(/\s+/g, " ")
+          .trim();
         if (text) {
           const x = current[0].x;
           const last = current[current.length - 1];
@@ -93,7 +110,8 @@ export async function extractCells(pdf: Buffer): Promise<Cell[]> {
 
       for (const fragment of fragments) {
         const previous = current[current.length - 1];
-        if (previous && fragment.x - (previous.x + previous.width) > maxGap) flush();
+        if (previous && fragment.x - (previous.x + previous.width) > maxGap)
+          flush();
         current.push(fragment);
       }
       flush();
@@ -170,7 +188,8 @@ const MARKETING = [
 
 /** Text vypadá jako název produktu, ne jako číslo stránky nebo slogan. */
 function looksLikeName(text: string): boolean {
-  if (!/[a-zá-ž]{3}/i.test(text) || text.length < 4 || text.length > 90) return false;
+  if (!/[a-zá-ž]{3}/i.test(text) || text.length < 4 || text.length > 90)
+    return false;
 
   const plain = text
     .normalize("NFD")
@@ -193,7 +212,12 @@ function sameColumn(a: Cell, b: Cell): boolean {
 }
 
 /** Mezera mezi buňkami; nula, když se v dané ose překrývají. */
-function gap(aStart: number, aEnd: number, bStart: number, bEnd: number): number {
+function gap(
+  aStart: number,
+  aEnd: number,
+  bStart: number,
+  bEnd: number,
+): number {
   if (aEnd >= bStart && bEnd >= aStart) return 0;
   return aEnd < bStart ? bStart - aEnd : aStart - bEnd;
 }
@@ -244,7 +268,11 @@ export function mergeSplitPrices(cells: Cell[]): Cell[] {
       if (other === cell || consumed.has(other)) return false;
       if (other.page !== cell.page) return false;
       if (!DECIMALS_RE.test(other.text.trim())) return false;
-      return other.x >= right - 6 && other.x - right < 30 && Math.abs(other.y - cell.y) < 26;
+      return (
+        other.x >= right - 6 &&
+        other.x - right < 30 &&
+        Math.abs(other.y - cell.y) < 26
+      );
     });
 
     if (!decimals) {
@@ -298,7 +326,12 @@ export function itemsFromCells(
       const restMatch = rest.match(PRICE_RE);
       const regular = restMatch ? parsePrice(restMatch[1]) : null;
       items.push(
-        buildItem(before, [value, regular].filter((v): v is number => v != null), cell, validity),
+        buildItem(
+          before,
+          [value, regular].filter((v): v is number => v != null),
+          cell,
+          validity,
+        ),
       );
       continue;
     }
@@ -408,22 +441,45 @@ async function runOcr(pdf: Buffer): Promise<Buffer | null> {
   }
 }
 
+function fetchLeaflet(url: string): Promise<Response> {
+  return fetch(url, {
+    headers: {
+      "user-agent": USER_AGENT,
+      accept: "application/pdf,text/html,*/*",
+    },
+    signal: AbortSignal.timeout(60_000),
+  });
+}
+
 export const leafletScraper: Scraper = {
   async snapshot(store: Store): Promise<ScrapeResult> {
     const warnings: string[] = [];
 
-    const res = await fetch(store.sourceUrl, {
-      headers: { "user-agent": USER_AGENT, accept: "application/pdf,*/*" },
-      signal: AbortSignal.timeout(60_000),
-    });
+    let res = await fetchLeaflet(store.sourceUrl);
     if (!res.ok) throw new Error(`${store.name}: leták vrátil ${res.status}`);
+
+    // Zadaná je stránka s letákem, ne samotné PDF: odkaz na aktuální najdeme v ní.
+    if ((res.headers.get("content-type") ?? "").includes("html")) {
+      const link = findPdfLink(await res.text());
+      if (!link)
+        throw new Error(
+          `${store.name}: na stránce ${store.sourceUrl} není odkaz na PDF letáku.`,
+        );
+      res = await fetchLeaflet(link);
+      if (!res.ok)
+        throw new Error(`${store.name}: leták ${link} vrátil ${res.status}`);
+    }
 
     let pdf: Buffer = Buffer.from(await res.arrayBuffer());
     const sourceHash = crypto.createHash("sha256").update(pdf).digest("hex");
 
     // Stejný soubor jako minule – leták ještě nevyšel.
     if (sourceHash === store.lastSourceHash) {
-      return { items: [], sourceHash, warnings: ["Leták se od poslední kontroly nezměnil."] };
+      return {
+        items: [],
+        sourceHash,
+        warnings: ["Leták se od poslední kontroly nezměnil."],
+      };
     }
 
     let cells = await extractCells(pdf);
@@ -442,15 +498,22 @@ export const leafletScraper: Scraper = {
     }
 
     // Platnost akce bývá na titulní straně.
-    const header = cells.slice(0, 40).map((c) => c.text).join(" ");
+    const header = cells
+      .slice(0, 40)
+      .map((c) => c.text)
+      .join(" ");
     const validity = parseValidity(header);
     if (!validity.from) {
-      warnings.push(`${store.name}: v letáku se nepodařilo najít platnost akce.`);
+      warnings.push(
+        `${store.name}: v letáku se nepodařilo najít platnost akce.`,
+      );
     }
 
     const items = itemsFromCells(cells, validity);
     if (items.length === 0) {
-      warnings.push(`${store.name}: z letáku se nepodařilo vytáhnout žádné položky.`);
+      warnings.push(
+        `${store.name}: z letáku se nepodařilo vytáhnout žádné položky.`,
+      );
     }
 
     return { items, sourceHash, warnings };
