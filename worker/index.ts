@@ -12,6 +12,7 @@
 import { Container, getContainer, type OutboundHandler } from "@cloudflare/containers";
 
 import { d1Proxy } from "./d1-proxy";
+import { httpsRedirect } from "./https";
 
 // Outbound handlery (most k D1) běží přes ContainerProxy; knihovna ho hledá
 // mezi exporty workeru, jinak kontejner vůbec nenastartuje.
@@ -71,8 +72,8 @@ VmerkuContainer.outboundByHost = {
 };
 
 export default {
-  fetch(request: Request, env: Env): Promise<Response> {
-    return getContainer(env.HLIDAC, INSTANCE).fetch(request);
+  async fetch(request: Request, env: Env): Promise<Response> {
+    return httpsRedirect(request) ?? getContainer(env.HLIDAC, INSTANCE).fetch(request);
   },
 
   async scheduled(controller: ScheduledController, env: Env): Promise<void> {
