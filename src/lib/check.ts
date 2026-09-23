@@ -14,8 +14,15 @@ import { normalize, rankCandidates, similarity } from "./match";
 import { buildSaleMail, type SaleAlert, sendMail } from "./notify";
 import { scraperFor, type ScrapedItem } from "./scrapers";
 
-const { stores, products, productStoreAliases, priceObservations, notificationLog, storeItems, userSettings } =
-  schema;
+const {
+  stores,
+  products,
+  productStoreAliases,
+  priceObservations,
+  notificationLog,
+  storeItems,
+  userSettings,
+} = schema;
 
 /** Nad tímhle skóre se shoda přijme sama, bez potvrzení uživatelem. */
 const AUTO_MATCH_THRESHOLD = 0.82;
@@ -31,10 +38,16 @@ export async function runCheck(
   db: Db,
   { only, now = new Date() }: { only?: Store["kind"]; now?: Date } = {},
 ): Promise<CheckReport> {
-  const report: CheckReport = { checkedStores: [], observations: 0, newSales: 0, warnings: [] };
+  const report: CheckReport = {
+    checkedStores: [],
+    observations: 0,
+    newSales: 0,
+    warnings: [],
+  };
 
-  const activeStores = (await db.select().from(stores).where(eq(stores.active, true)).all())
-    .filter((s) => !only || s.kind === only);
+  const activeStores = (
+    await db.select().from(stores).where(eq(stores.active, true)).all()
+  ).filter((s) => !only || s.kind === only);
 
   const watched = await db.select().from(products).all();
   if (watched.length === 0) return report;
@@ -53,14 +66,25 @@ export async function runCheck(
         await recordObservation(db, product.id, store.id, match, now);
         report.observations++;
 
-        const alert = await maybeAlert(db, product.id, product.canonicalName, store, match, now);
+        const alert = await maybeAlert(
+          db,
+          product.id,
+          product.canonicalName,
+          store,
+          match,
+          now,
+        );
         if (alert) {
           alerts.push(alert);
           report.newSales++;
         }
       }
 
-      await db.update(stores).set({ lastCheckedAt: now }).where(eq(stores.id, store.id)).run();
+      await db
+        .update(stores)
+        .set({ lastCheckedAt: now })
+        .where(eq(stores.id, store.id))
+        .run();
     } catch (error) {
       report.warnings.push(`${store.name}: ${(error as Error).message}`);
     }
@@ -74,6 +98,30 @@ export async function runCheck(
  * Získá aktuální nabídku obchodu a uloží ji do `store_items`.
  * Letáky se stahují celé, e-shopy se ptají jen na hlídané názvy.
  */
+/**
+ * Stáhne leták hned, mimo plánovanou kontrolu (tlačítko v Nastavení).
+ * Jen uloží položky, nic neporovnává a neposílá.
+ */
+export async function refreshLeaflet(
+  db: Db,
+  store: Store,
+  now = new Date(),
+): Promise<{ items: number; warnings: string[] }> {
+  const scraper = scraperFor(store);
+  if (!scraper.snapshot) throw new Error("scraper neumí stáhnout leták");
+  // Vynutíme nové zpracování, i když se soubor od minula nezměnil.
+  const result = await scraper.snapshot({ ...store, lastSourceHash: null });
+  if (result.items.length > 0) {
+    await replaceStoreItems(db, store.id, result.items, now);
+    await db
+      .update(stores)
+      .set({ lastSourceHash: result.sourceHash, lastCheckedAt: now })
+      .where(eq(stores.id, store.id))
+      .run();
+  }
+  return { items: result.items.length, warnings: result.warnings };
+}
+
 async function collectStoreItems(
   db: Db,
   store: Store,
@@ -90,7 +138,11 @@ async function collectStoreItems(
 
     if (result.sourceHash && result.sourceHash === store.lastSourceHash) {
       // Leták se nezměnil – použijeme, co máme uložené z minula.
-      const stored = await db.select().from(storeItems).where(eq(storeItems.storeId, store.id)).all();
+      const stored = await db
+        .select()
+        .from(storeItems)
+        .where(eq(storeItems.storeId, store.id))
+        .all();
       return stored.map(toScraped);
     }
 
@@ -114,7 +166,10 @@ async function collectStoreItems(
     .where(
       and(
         eq(productStoreAliases.storeId, store.id),
-        inArray(productStoreAliases.productId, watched.map((p) => p.id)),
+        inArray(
+          productStoreAliases.productId,
+          watched.map((p) => p.id),
+        ),
       ),
     )
     .all();
@@ -130,7 +185,9 @@ async function collectStoreItems(
     try {
       found.push(...(await scraper.search(store, query, db)));
     } catch (error) {
-      report.warnings.push(`${store.name} / „${query}“: ${(error as Error).message}`);
+      report.warnings.push(
+        `${store.name} / „${query}“: ${(error as Error).message}`,
+      );
     }
   }
 
@@ -195,7 +252,12 @@ async function pickMatch(
   const aliases = await db
     .select()
     .from(productStoreAliases)
-    .where(and(eq(productStoreAliases.productId, productId), eq(productStoreAliases.storeId, storeId)))
+    .where(
+      and(
+        eq(productStoreAliases.productId, productId),
+        eq(productStoreAliases.storeId, storeId),
+      ),
+    )
     .all();
 
   for (const alias of aliases) {
@@ -213,7 +275,11 @@ async function pickMatch(
 
   if (aliases.length > 0) return null;
 
-  const product = await db.select().from(products).where(eq(products.id, productId)).get();
+  const product = await db
+    .select()
+    .from(products)
+    .where(eq(products.id, productId))
+    .get();
   if (!product) return null;
 
   const best = rankCandidates(product.canonicalName, items, (i) => i.rawName, {
@@ -250,7 +316,10 @@ async function recordObservation(
     .select()
     .from(priceObservations)
     .where(
-      and(eq(priceObservations.productId, productId), eq(priceObservations.storeId, storeId)),
+      and(
+        eq(priceObservations.productId, productId),
+        eq(priceObservations.storeId, storeId),
+      ),
     )
     .orderBy(desc(priceObservations.observedAt))
     .limit(1)
@@ -317,7 +386,10 @@ async function maybeAlert(
       ),
     )
     .all();
-  const lowest = halfYear.length > 0 ? Math.min(...halfYear.map((o) => o.price)) : item.price;
+  const lowest =
+    halfYear.length > 0
+      ? Math.min(...halfYear.map((o) => o.price))
+      : item.price;
 
   return {
     productId,
@@ -333,10 +405,18 @@ async function maybeAlert(
 }
 
 /** Rozešle upozornění podle režimu v Nastavení (okamžitě / denní souhrn). */
-async function dispatchAlerts(db: Db, alerts: SaleAlert[], now: Date): Promise<void> {
+async function dispatchAlerts(
+  db: Db,
+  alerts: SaleAlert[],
+  now: Date,
+): Promise<void> {
   if (alerts.length === 0) return;
 
-  const settings = await db.select().from(userSettings).where(eq(userSettings.id, 1)).get();
+  const settings = await db
+    .select()
+    .from(userSettings)
+    .where(eq(userSettings.id, 1))
+    .get();
   if (!settings?.email) {
     console.info("[mail] není nastavená adresa – upozornění se neodesílají.");
     return;
@@ -366,7 +446,11 @@ async function dispatchAlerts(db: Db, alerts: SaleAlert[], now: Date): Promise<v
   }
 
   if (settings.notifyMode === "daily-digest") {
-    await db.update(userSettings).set({ lastDigestAt: now }).where(eq(userSettings.id, 1)).run();
+    await db
+      .update(userSettings)
+      .set({ lastDigestAt: now })
+      .where(eq(userSettings.id, 1))
+      .run();
   }
 }
 

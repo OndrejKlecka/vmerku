@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 
 import {
+  refreshLeafletAction,
   addStore,
   saveSettings,
   setStoreActive,
@@ -41,6 +42,11 @@ export function SettingsForm({
   const [addingStore, startAdd] = useTransition();
   const [savingStore, startSaveStore] = useTransition();
   const [editingId, setEditingId] = useState<number | null>(null);
+  const [refreshing, startRefresh] = useTransition();
+  const [refreshNote, setRefreshNote] = useState<{
+    id: number;
+    text: string;
+  } | null>(null);
 
   const watched = stores.filter((s) => s.active);
   const available = stores.filter((s) => !s.active);
@@ -96,8 +102,38 @@ export function SettingsForm({
                       ? "e-shop, kontrola denně"
                       : "týdenní leták"}
                   </span>
+                  {refreshNote?.id === store.id && (
+                    <span
+                      className="muted"
+                      style={{ display: "block", fontSize: 13 }}
+                    >
+                      {refreshNote.text}
+                    </span>
+                  )}
                 </span>
                 <span style={{ display: "flex", gap: 8 }}>
+                  {store.kind === "weekly-leaflet" && (
+                    <button
+                      type="button"
+                      className="btn btn-quiet"
+                      disabled={refreshing}
+                      onClick={() =>
+                        startRefresh(async () => {
+                          setRefreshNote({
+                            id: store.id,
+                            text: "Stahuji a čtu leták…",
+                          });
+                          const result = await refreshLeafletAction(store.id);
+                          setRefreshNote({
+                            id: store.id,
+                            text: result.message,
+                          });
+                        })
+                      }
+                    >
+                      Stáhnout leták teď
+                    </button>
+                  )}
                   <button
                     type="button"
                     className="btn btn-quiet"

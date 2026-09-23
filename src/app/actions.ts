@@ -13,6 +13,7 @@ import {
   stores,
   userSettings,
 } from "@/db/schema";
+import { refreshLeaflet } from "@/lib/check";
 import { matchPercent, normalize, rankCandidates } from "@/lib/match";
 import { disconnectRohlik } from "@/lib/rohlik-mcp";
 import { scraperFor } from "@/lib/scrapers";
@@ -279,6 +280,29 @@ export async function updateStore(
     .run();
   revalidatePath("/nastaveni");
   revalidatePath("/");
+}
+
+/** Stáhne leták obchodu hned a vrátí, kolik položek z něj appka vyčetla. */
+export async function refreshLeafletAction(
+  storeId: number,
+): Promise<{ ok: boolean; message: string }> {
+  const store = await db
+    .select()
+    .from(stores)
+    .where(eq(stores.id, storeId))
+    .get();
+  if (!store) return { ok: false, message: "Obchod nenalezen." };
+  try {
+    const { items, warnings } = await refreshLeaflet(db, store);
+    revalidatePath("/nastaveni");
+    const note = warnings.length ? ` ${warnings.join(" ")}` : "";
+    return {
+      ok: items > 0,
+      message: `Z letáku vyčteno ${items} položek.${note}`,
+    };
+  } catch (error) {
+    return { ok: false, message: (error as Error).message };
+  }
 }
 
 /** Ruční potvrzení aliasu z detailu produktu (když appka spárovala sama). */
