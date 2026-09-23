@@ -13,7 +13,7 @@ import {
   stores,
   userSettings,
 } from "@/db/schema";
-import { refreshLeaflet } from "@/lib/check";
+import { leafletRefreshes, refreshLeaflet } from "@/lib/check";
 import { matchPercent, normalize, rankCandidates } from "@/lib/match";
 import { disconnectRohlik } from "@/lib/rohlik-mcp";
 import { scraperFor } from "@/lib/scrapers";
@@ -282,7 +282,10 @@ export async function updateStore(
   revalidatePath("/");
 }
 
-/** Stáhne leták obchodu hned a vrátí, kolik položek z něj appka vyčetla. */
+/**
+ * Stáhne leták obchodu hned. Běží na pozadí: s OCR to trvá i desítky minut
+ * a tak dlouho by prohlížeč na odpověď nečekal. Stav ukáže /nastaveni/letak.
+ */
 export async function refreshLeafletAction(
   storeId: number,
 ): Promise<{ ok: boolean; message: string }> {
@@ -292,17 +295,35 @@ export async function refreshLeafletAction(
     .where(eq(stores.id, storeId))
     .get();
   if (!store) return { ok: false, message: "Obchod nenalezen." };
-  try {
-    const { items, warnings } = await refreshLeaflet(db, store);
-    revalidatePath("/nastaveni");
-    const note = warnings.length ? ` ${warnings.join(" ")}` : "";
-    return {
-      ok: items > 0,
-      message: `Z letáku vyčteno ${items} položek.${note}`,
-    };
-  } catch (error) {
-    return { ok: false, message: (error as Error).message };
+  if (leafletRefreshes.get(storeId)?.running) {
+    return { ok: true, message: "Leták se už zpracovává." };
   }
+  leafletRefreshes.set(storeId, {
+    running: true,
+    message: "Stahuji a čtu leták…",
+    at: new Date(),
+  });
+  void refreshLeaflet(db, store)
+    .then(({ items, warnings }) => {
+      const note = warnings.length ? ` ${warnings.join(" ")}` : "";
+      leafletRefreshes.set(storeId, {
+        running: false,
+        message: `Hotovo: z letáku vyčteno ${items} položek.${note}`,
+        at: new Date(),
+      });
+    })
+    .catch((error: Error) => {
+      leafletRefreshes.set(storeId, {
+        running: false,
+        message: `Chyba: ${error.message}`,
+        at: new Date(),
+      });
+    });
+  return {
+    ok: true,
+    message:
+      "Leták se zpracovává na pozadí, s OCR to může trvat i 20 minut. Stav uvidíš v Diagnostice letáku.",
+  };
 }
 
 /** Ruční potvrzení aliasu z detailu produktu (když appka spárovala sama). */

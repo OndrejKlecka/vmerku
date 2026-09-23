@@ -7,6 +7,7 @@ import { eq } from "drizzle-orm";
 
 import { db } from "@/db";
 import { storeItems, stores } from "@/db/schema";
+import { leafletRefreshes } from "@/lib/check";
 import { normalize } from "@/lib/match";
 import {
   downloadLeafletPdf,
@@ -136,6 +137,18 @@ export default async function LeafletDiagnostics({
           </button>
         </form>
       </section>
+
+      {store && leafletRefreshes.get(store.id) && (
+        <section className="section card">
+          <h2>Ruční stažení</h2>
+          <p>
+            {leafletRefreshes.get(store.id)!.message}{" "}
+            <span className="muted">
+              ({leafletRefreshes.get(store.id)!.at.toLocaleTimeString("cs-CZ")})
+            </span>
+          </p>
+        </section>
+      )}
 
       <section className="section card">
         <h2>Uložené položky ({stored.length})</h2>

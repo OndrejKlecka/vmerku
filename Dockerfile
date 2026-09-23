@@ -24,9 +24,11 @@ ENV NODE_ENV=production
 ENV DATABASE_PATH=/data/v-merku.db
 # Když je nastavená D1_PROXY_URL, DATABASE_PATH se nepoužije (viz src/db/connect.ts).
 
-# Volitelné OCR pro obrázkové letáky – viz OCR_COMMAND v README.
-# RUN apt-get update && apt-get install -y --no-install-recommends \
-#     ocrmypdf tesseract-ocr-ces && rm -rf /var/lib/apt/lists/*
+# OCR pro letáky bez čitelného textu (Tesco má část názvů v písmu, ze
+# kterého text vypadne jako nesmysl) – viz runOcr v src/lib/scrapers/leaflet.ts.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ocrmypdf tesseract-ocr-ces && rm -rf /var/lib/apt/lists/*
+ENV OCR_COMMAND="ocrmypdf --force-ocr -l ces --output-type pdf --optimize 0 --jobs 1 --quiet {in} {out}"
 
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=build /app/.next ./.next

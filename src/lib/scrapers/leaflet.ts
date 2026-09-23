@@ -457,9 +457,17 @@ export function itemsFromLines(
   return itemsFromCells(cells, validity);
 }
 
-async function runOcr(pdf: Buffer): Promise<Buffer | null> {
+/** OCR celého letáku na 1/4 vCPU trvá minuty, ne sekundy. */
+const OCR_TIMEOUT_MS = 20 * 60_000;
+
+/** Nad tímhle podílem nečitelných útržků se leták radši přečte přes OCR. */
+export const GARBLED_OCR_SHARE = 0.05;
+
+async function runOcr(
+  pdf: Buffer,
+): Promise<{ pdf: Buffer } | { error: string }> {
   const command = process.env.OCR_COMMAND;
-  if (!command) return null;
+  if (!command) return { error: "není nastavené OCR_COMMAND" };
 
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "vm-ocr-"));
   const input = path.join(dir, "in.pdf");
@@ -470,10 +478,14 @@ async function runOcr(pdf: Buffer): Promise<Buffer | null> {
       .replace("{in}", input)
       .replace("{out}", output)
       .split(/\s+/);
-    await execFileAsync(bin, args, { timeout: 180_000 });
-    return await fs.readFile(output);
-  } catch {
-    return null;
+    await execFileAsync(bin, args, {
+      timeout: OCR_TIMEOUT_MS,
+      maxBuffer: 16 * 1024 * 1024,
+    });
+    return { pdf: await fs.readFile(output) };
+  } catch (error) {
+    console.error("[ocr]", error);
+    return { error: (error as Error).message.split("\n")[0] };
   } finally {
     await fs.rm(dir, { recursive: true, force: true });
   }
@@ -534,17 +546,28 @@ export const leafletScraper: Scraper = {
 
     let cells = await extractCells(pdf);
 
-    if (!hasTextLayer(cells)) {
-      const ocred = await runOcr(pdf);
-      if (!ocred) {
+    // Tesco má část názvů v písmu, ze kterého text vypadne jako nesmysl.
+    const garbled = cells.filter((c) => isGarbled(c.text)).length;
+    const mostlyGarbled =
+      cells.length > 0 && garbled / cells.length > GARBLED_OCR_SHARE;
+
+    if (!hasTextLayer(cells) || mostlyGarbled) {
+      const ocr = await runOcr(pdf);
+      if ("error" in ocr) {
+        if (!hasTextLayer(cells)) {
+          warnings.push(
+            `${store.name}: leták nemá textovou vrstvu a OCR selhalo (${ocr.error}) – přeskakuji.`,
+          );
+          return { items: [], sourceHash, warnings };
+        }
         warnings.push(
-          `${store.name}: leták nemá textovou vrstvu a není nastavené OCR_COMMAND – přeskakuji.`,
+          `${store.name}: ${garbled} útržků textu je nečitelných a OCR selhalo (${ocr.error}); čtu jen zbytek.`,
         );
-        return { items: [], sourceHash, warnings };
+      } else {
+        pdf = ocr.pdf;
+        cells = await extractCells(pdf);
+        warnings.push(`${store.name}: leták prošel OCR.`);
       }
-      pdf = ocred;
-      cells = await extractCells(pdf);
-      warnings.push(`${store.name}: leták prošel OCR.`);
     }
 
     // Platnost akce bývá na titulní straně.

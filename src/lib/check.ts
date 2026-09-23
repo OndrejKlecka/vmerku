@@ -98,6 +98,12 @@ export async function runCheck(
  * Získá aktuální nabídku obchodu a uloží ji do `store_items`.
  * Letáky se stahují celé, e-shopy se ptají jen na hlídané názvy.
  */
+/** Stav ručního stažení letáku podle obchodu; žije jen v paměti kontejneru. */
+export const leafletRefreshes = new Map<
+  number,
+  { running: boolean; message: string; at: Date }
+>();
+
 /**
  * Stáhne leták hned, mimo plánovanou kontrolu (tlačítko v Nastavení).
  * Jen uloží položky, nic neporovnává a neposílá.
