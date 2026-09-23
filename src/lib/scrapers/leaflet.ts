@@ -451,31 +451,38 @@ function fetchLeaflet(url: string): Promise<Response> {
   });
 }
 
+/** Stáhne PDF letáku; umí i stránku obchodu, na které si odkaz najde. */
+export async function downloadLeafletPdf(
+  store: Pick<Store, "name" | "sourceUrl">,
+): Promise<Buffer> {
+  let res = await fetchLeaflet(store.sourceUrl);
+  if (!res.ok) throw new Error(`${store.name}: leták vrátil ${res.status}`);
+
+  // Zadaná je stránka s letákem, ne samotné PDF: odkaz na aktuální najdeme v ní.
+  if ((res.headers.get("content-type") ?? "").includes("html")) {
+    const hint =
+      decodeURIComponent(new URL(store.sourceUrl).hash.slice(1)) || undefined;
+    const link = findPdfLink(await res.text(), hint);
+    if (!link) {
+      throw new Error(
+        hint
+          ? `${store.name}: na stránce není PDF letáku obsahující „${hint}“.`
+          : `${store.name}: na stránce ${store.sourceUrl} není odkaz na PDF letáku.`,
+      );
+    }
+    res = await fetchLeaflet(link);
+    if (!res.ok)
+      throw new Error(`${store.name}: leták ${link} vrátil ${res.status}`);
+  }
+
+  return Buffer.from(await res.arrayBuffer());
+}
+
 export const leafletScraper: Scraper = {
   async snapshot(store: Store): Promise<ScrapeResult> {
     const warnings: string[] = [];
 
-    let res = await fetchLeaflet(store.sourceUrl);
-    if (!res.ok) throw new Error(`${store.name}: leták vrátil ${res.status}`);
-
-    // Zadaná je stránka s letákem, ne samotné PDF: odkaz na aktuální najdeme v ní.
-    if ((res.headers.get("content-type") ?? "").includes("html")) {
-      const hint =
-        decodeURIComponent(new URL(store.sourceUrl).hash.slice(1)) || undefined;
-      const link = findPdfLink(await res.text(), hint);
-      if (!link) {
-        throw new Error(
-          hint
-            ? `${store.name}: na stránce není PDF letáku obsahující „${hint}“.`
-            : `${store.name}: na stránce ${store.sourceUrl} není odkaz na PDF letáku.`,
-        );
-      }
-      res = await fetchLeaflet(link);
-      if (!res.ok)
-        throw new Error(`${store.name}: leták ${link} vrátil ${res.status}`);
-    }
-
-    let pdf: Buffer = Buffer.from(await res.arrayBuffer());
+    let pdf: Buffer = await downloadLeafletPdf(store);
     const sourceHash = crypto.createHash("sha256").update(pdf).digest("hex");
 
     // Stejný soubor jako minule – leták ještě nevyšel.
