@@ -184,10 +184,37 @@ const MARKETING = [
   /^sleva/,
   /^-?\d+\s*%/,
   /^\d+\s*(ks|kg|g|l|ml)\b.*=/,
+  // Tesco: štítky u ceny a řádky s gramáží/platností pod názvem.
+  /^clubcard$/,
+  /^s clubcard/,
+  /^cena$/,
+  /^bez ?na( cena)?$/,
+  /^\d+([.,]\d+)?\s*([–-]\s*\d+([.,]\d+)?)?\s*(ks|kg|g|l|ml)\b/,
+  /^\d{1,2}\.\s*\d{1,2}\.\s*[–-]/,
+  /^neplati pro/,
 ];
+
+/** Písmena, která se v českém letáku normálně vyskytují. */
+const READABLE = /[\p{Script=Latin}\d\s.,:;!?%()&+\-–—'"„“/*=]/u;
+const CZECH_OR_ASCII =
+  /[a-zA-Z0-9áčďéěíňóřšťúůýžÁČĎÉĚÍŇÓŘŠŤÚŮÝŽäöüÄÖÜ\s.,:;!?%()&+\-–—'"„“/*=]/;
+
+/**
+ * Text z písma bez převodní tabulky vypadne jako „BÉ¨Á«��¨«ÔÛ÷“. Takový
+ * útržek nejde použít jako název – přečíst by ho šlo jen přes OCR.
+ */
+export function isGarbled(text: string): boolean {
+  const chars = [...text.replace(/\s/g, "")];
+  if (chars.length === 0) return false;
+  const odd = chars.filter(
+    (c) => !CZECH_OR_ASCII.test(c) || !READABLE.test(c),
+  ).length;
+  return odd / chars.length > 0.2;
+}
 
 /** Text vypadá jako název produktu, ne jako číslo stránky nebo slogan. */
 function looksLikeName(text: string): boolean {
+  if (isGarbled(text)) return false;
   if (!/[a-zá-ž]{3}/i.test(text) || text.length < 4 || text.length > 90)
     return false;
 
@@ -310,6 +337,17 @@ export function itemsFromCells(
   const nameCells: Cell[] = [];
 
   for (const cell of cells) {
+    // Jednotková cena „(100 g = 47,62 Kč)“ není cena produktu.
+    if (cell.text.includes("=")) continue;
+
+    // Tesco: „Běžná cena“ je nad ní zvlášť, samotná částka má před sebou „cena“.
+    const regularOnly = cell.text.trim().match(/^cena\s+(\d{1,4}[.,]\d{2})$/i);
+    if (regularOnly) {
+      const value = parsePrice(regularOnly[1]);
+      if (value != null) priceCells.push({ cell, value });
+      continue;
+    }
+
     const match = cell.text.match(PRICE_RE);
     if (!match) {
       if (looksLikeName(cell.text)) nameCells.push(cell);

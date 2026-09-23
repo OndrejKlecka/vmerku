@@ -73,7 +73,7 @@ export default async function LeafletDiagnostics({
         normalize(i.rawName).includes(needle),
       );
       raw =
-        `Buněk: ${cells.length}, výskytů „${q}“: ${hits.length}\n\n` +
+        `Buněk: ${cells.length}, nečitelných: ${cells.filter((c) => isGarbled(c.text)).length}, výskytů „${q}“: ${hits.length}\n\n` +
         blocks.join("\n\n") +
         `\n\n--- parser z toho udělal ---\n` +
         parsed

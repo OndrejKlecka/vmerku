@@ -4,6 +4,7 @@ import { describe, it } from "node:test";
 import {
   type Cell,
   itemsFromCells,
+  isGarbled,
   itemsFromLines,
   mergeSplitPrices,
   parsePrice,
@@ -27,7 +28,10 @@ describe("parseValidity", () => {
   });
 
   it("posune konec do dalšího roku přes přelom", () => {
-    const { from, to } = parseValidity("28. 12. – 3. 1.", new Date(2026, 11, 20));
+    const { from, to } = parseValidity(
+      "28. 12. – 3. 1.",
+      new Date(2026, 11, 20),
+    );
     assert.ok(from && to && to > from);
   });
 });
@@ -97,10 +101,11 @@ describe("itemsFromCells", () => {
   it("nespojí sousední sloupce do jedné položky", () => {
     const items = itemsFromCells(grid, validity);
     assert.equal(items.length, 3);
-    assert.deepEqual(
-      items.map((i) => i.rawName).sort(),
-      ["Káva Tchibo Family 250 g", "Máslo Madeta 250 g", "Pivo Holba Šerák 11° 0,5 l"],
-    );
+    assert.deepEqual(items.map((i) => i.rawName).sort(), [
+      "Káva Tchibo Family 250 g",
+      "Máslo Madeta 250 g",
+      "Pivo Holba Šerák 11° 0,5 l",
+    ]);
   });
 
   it("spáruje cenu s názvem ve svém sloupci", () => {
@@ -171,4 +176,40 @@ describe("itemsFromCells – sazba letáku Lidlu", () => {
     assert.equal(cereals?.price, 89.9);
     assert.equal(turkey?.price, 199.9);
   });
+});
+
+it("Tesco dlaždice: cena, běžná cena a bez jednotkových cen a štítků", () => {
+  // Výřez skutečné textové vrstvy letáku Tesco (23. 9. 2026, strana 7).
+  const cells = [
+    ["Běž ná", 22, 268, 15],
+    ["cena 62,90", 22, 264, 44],
+    ["Ǖ 36 %", 30, 244, 26],
+    ["90", 49, 228, 13],
+    ["39", 24, 220, 25],
+    ["Milka Sušenky", 75, 220, 46],
+    ["112–260 g, více druhů", 75, 212, 66],
+    ["(100 g = 40,09–23,04 Kč)", 75, 204, 77],
+    ["Clubcard", 27, 200, 33],
+    ["s Clubcard:", 75, 196, 36],
+    ["cena", 35, 192, 17],
+    ["(100 g = 31,16–13,42 Kč)", 75, 188, 71],
+    ["BÉ¨Á«��¨«ÔÛ÷", 75, 344, 54],
+  ].map(([text, x, y, width]) => ({ text, x, y, width, page: 7 }) as Cell);
+
+  const items = itemsFromCells(cells, { from: null, to: null });
+  const milka = items.find((i) => i.rawName === "Milka Sušenky");
+  assert.ok(milka, JSON.stringify(items));
+  assert.equal(milka.price, 39.9);
+  assert.equal(milka.regularPrice, 62.9);
+  assert.ok(
+    !items.some((i) => /Clubcard|více druhů|¨/.test(i.rawName)),
+    JSON.stringify(items),
+  );
+});
+
+it("rozsypaný text z písma bez převodní tabulky se pozná", () => {
+  assert.equal(isGarbled("BÉ¨Á«��¨«ÔÛ÷"), true);
+  assert.equal(isGarbled("c¨«É��ĉÛÛ«ÁÉ"), true);
+  assert.equal(isGarbled("Milka Sušenky"), false);
+  assert.equal(isGarbled("Vepřová kýta bez kosti*"), false);
 });
