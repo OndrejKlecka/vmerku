@@ -7,6 +7,7 @@
  * CHECK_TOKEN endpoint nic nespustí, aby nešel zavolat omylem zvenčí.
  */
 import { NextResponse } from "next/server";
+import { createHash, timingSafeEqual } from "node:crypto";
 
 import { db } from "@/db";
 import { runCheck } from "@/lib/check";
@@ -16,6 +17,15 @@ export const runtime = "nodejs";
 // Stažení a rozebrání letáků trvá déle než běžný požadavek.
 export const maxDuration = 300;
 
+/**
+ * Porovnání v konstantním čase, aby se tajemství nedalo hádat podle toho,
+ * jak rychle přijde odmítnutí. Hash srovná délky, timingSafeEqual je chce stejné.
+ */
+function sameSecret(given: string, expected: string): boolean {
+  const digest = (value: string) => createHash("sha256").update(value).digest();
+  return timingSafeEqual(digest(given), digest(expected));
+}
+
 type Body = { only?: "daily-scrape" | "weekly-leaflet" };
 
 export async function POST(request: Request): Promise<NextResponse> {
@@ -23,7 +33,7 @@ export async function POST(request: Request): Promise<NextResponse> {
   if (!expected) {
     return NextResponse.json({ error: "CHECK_TOKEN není nastavený" }, { status: 503 });
   }
-  if (request.headers.get("x-check-token") !== expected) {
+  if (!sameSecret(request.headers.get("x-check-token") ?? "", expected)) {
     return NextResponse.json({ error: "Nepovolený požadavek" }, { status: 401 });
   }
 
