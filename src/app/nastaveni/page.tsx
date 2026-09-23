@@ -25,6 +25,7 @@ export default async function SettingsPage({
     name: s.name,
     kind: s.kind,
     sourceUrl: s.sourceUrl,
+    leafletDay: s.leafletDay,
     active: s.active,
   }));
 

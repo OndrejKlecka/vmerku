@@ -1,8 +1,13 @@
 "use client";
 
-import { useTransition } from "react";
+import { useState, useTransition } from "react";
 
-import { addStore, saveSettings, setStoreActive } from "@/app/actions";
+import {
+  addStore,
+  saveSettings,
+  setStoreActive,
+  updateStore,
+} from "@/app/actions";
 import type { UserSettings } from "@/db/schema";
 
 type StoreRow = {
@@ -10,10 +15,19 @@ type StoreRow = {
   name: string;
   kind: "daily-scrape" | "weekly-leaflet";
   sourceUrl: string;
+  leafletDay: number | null;
   active: boolean;
 };
 
-const DAYS = ["neděle", "pondělí", "úterý", "středa", "čtvrtek", "pátek", "sobota"];
+const DAYS = [
+  "neděle",
+  "pondělí",
+  "úterý",
+  "středa",
+  "čtvrtek",
+  "pátek",
+  "sobota",
+];
 
 export function SettingsForm({
   settings,
@@ -25,6 +39,8 @@ export function SettingsForm({
   const [savingSettings, startSaveSettings] = useTransition();
   const [togglingStore, startToggle] = useTransition();
   const [addingStore, startAdd] = useTransition();
+  const [savingStore, startSaveStore] = useTransition();
+  const [editingId, setEditingId] = useState<number | null>(null);
 
   const watched = stores.filter((s) => s.active);
   const available = stores.filter((s) => !s.active);
@@ -37,24 +53,72 @@ export function SettingsForm({
         {watched.length === 0 ? (
           <p className="muted">Zatím žádný obchod.</p>
         ) : (
-          watched.map((store) => (
-            <div key={store.id} className="settings-row">
-              <span>
-                <strong>{store.name}</strong>
-                <span className="dim" style={{ display: "block", fontSize: 13 }}>
-                  {store.kind === "daily-scrape" ? "e-shop, kontrola denně" : "týdenní leták"}
-                </span>
-              </span>
-              <button
-                type="button"
-                className="btn btn-quiet"
-                disabled={togglingStore}
-                onClick={() => startToggle(() => setStoreActive(store.id, false))}
+          watched.map((store) =>
+            editingId === store.id ? (
+              <form
+                key={store.id}
+                className="settings-row"
+                style={{ display: "block" }}
+                action={(fd) =>
+                  startSaveStore(async () => {
+                    await updateStore(store.id, fd);
+                    setEditingId(null);
+                  })
+                }
               >
-                Odebrat
-              </button>
-            </div>
-          ))
+                <StoreFields store={store} />
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button
+                    type="submit"
+                    className="btn btn-primary"
+                    disabled={savingStore}
+                  >
+                    {savingStore ? "Ukládám…" : "Uložit"}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-quiet"
+                    onClick={() => setEditingId(null)}
+                  >
+                    Zrušit
+                  </button>
+                </div>
+              </form>
+            ) : (
+              <div key={store.id} className="settings-row">
+                <span>
+                  <strong>{store.name}</strong>
+                  <span
+                    className="dim"
+                    style={{ display: "block", fontSize: 13 }}
+                  >
+                    {store.kind === "daily-scrape"
+                      ? "e-shop, kontrola denně"
+                      : "týdenní leták"}
+                  </span>
+                </span>
+                <span style={{ display: "flex", gap: 8 }}>
+                  <button
+                    type="button"
+                    className="btn btn-quiet"
+                    onClick={() => setEditingId(store.id)}
+                  >
+                    Upravit
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-quiet"
+                    disabled={togglingStore}
+                    onClick={() =>
+                      startToggle(() => setStoreActive(store.id, false))
+                    }
+                  >
+                    Odebrat
+                  </button>
+                </span>
+              </div>
+            ),
+          )
         )}
 
         {available.length > 0 && (
@@ -67,7 +131,9 @@ export function SettingsForm({
                   type="button"
                   className="chip"
                   disabled={togglingStore}
-                  onClick={() => startToggle(() => setStoreActive(store.id, true))}
+                  onClick={() =>
+                    startToggle(() => setStoreActive(store.id, true))
+                  }
                 >
                   + {store.name}
                 </button>
@@ -80,41 +146,13 @@ export function SettingsForm({
       <section className="section card">
         <h2>Přidat další obchod</h2>
         <form action={(fd) => startAdd(() => addStore(fd))}>
-          <label className="field">
-            <span className="field-label">Název</span>
-            <input className="input" name="name" placeholder="např. Penny" required />
-          </label>
+          <StoreFields />
 
-          <label className="field">
-            <span className="field-label">Typ zdroje</span>
-            <select className="input" name="kind" defaultValue="weekly-leaflet">
-              <option value="weekly-leaflet">Týdenní leták (PDF)</option>
-              <option value="daily-scrape">E-shop (denní kontrola)</option>
-            </select>
-          </label>
-
-          <label className="field">
-            <span className="field-label">URL zdroje</span>
-            <input
-              className="input"
-              name="sourceUrl"
-              placeholder="https://…/letak.pdf"
-              required
-            />
-          </label>
-
-          <label className="field">
-            <span className="field-label">Den vydání letáku</span>
-            <select className="input" name="leafletDay" defaultValue="3">
-              {DAYS.map((day, index) => (
-                <option key={day} value={index}>
-                  {day}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <button type="submit" className="btn btn-primary" disabled={addingStore}>
+          <button
+            type="submit"
+            className="btn btn-primary"
+            disabled={addingStore}
+          >
             {addingStore ? "Přidávám…" : "Přidat obchod"}
           </button>
         </form>
@@ -165,11 +203,75 @@ export function SettingsForm({
             V souhrnu zmínit i položky beze změny
           </label>
 
-          <button type="submit" className="btn btn-primary" disabled={savingSettings}>
+          <button
+            type="submit"
+            className="btn btn-primary"
+            disabled={savingSettings}
+          >
             {savingSettings ? "Ukládám…" : "Uložit"}
           </button>
         </form>
       </section>
+    </>
+  );
+}
+
+/** Pole obchodu; bez `store` prázdná pro přidání, se `store` předvyplněná pro úpravu. */
+function StoreFields({ store }: { store?: StoreRow }) {
+  const [kind, setKind] = useState(store?.kind ?? "weekly-leaflet");
+  return (
+    <>
+      <label className="field">
+        <span className="field-label">Název</span>
+        <input
+          className="input"
+          name="name"
+          placeholder="např. Penny"
+          defaultValue={store?.name}
+          required
+        />
+      </label>
+
+      <label className="field">
+        <span className="field-label">Typ zdroje</span>
+        <select
+          className="input"
+          name="kind"
+          value={kind}
+          onChange={(e) => setKind(e.target.value as StoreRow["kind"])}
+        >
+          <option value="weekly-leaflet">Týdenní leták (PDF)</option>
+          <option value="daily-scrape">E-shop (denní kontrola)</option>
+        </select>
+      </label>
+
+      <label className="field">
+        <span className="field-label">URL zdroje</span>
+        <input
+          className="input"
+          name="sourceUrl"
+          placeholder="https://…/letak.pdf"
+          defaultValue={store?.sourceUrl}
+          required
+        />
+      </label>
+
+      {kind === "weekly-leaflet" && (
+        <label className="field">
+          <span className="field-label">Den vydání letáku</span>
+          <select
+            className="input"
+            name="leafletDay"
+            defaultValue={String(store?.leafletDay ?? 3)}
+          >
+            {DAYS.map((day, index) => (
+              <option key={day} value={index}>
+                {day}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
     </>
   );
 }
