@@ -21,7 +21,8 @@
     "cf:deploy": "wrangler deploy",
     "cf:migrate": "wrangler d1 migrations apply vmerku --remote",
     "cf:secrets": "wrangler secret bulk",
-    "cf:release": "npm run cf:migrate && wrangler deploy"
+    "cf:release": "npm run cf:migrate && npm run cf:build-info && wrangler deploy",
+    "cf:build-info": "node scripts/build-info.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",
