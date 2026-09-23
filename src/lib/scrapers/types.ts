@@ -44,5 +44,5 @@ export function headerSafe(value: string): string {
 }
 
 export const USER_AGENT = headerSafe(
-  process.env.SCRAPER_USER_AGENT ?? "Mozilla/5.0 (compatible; v-merku/0.1; osobni hlidac cen)",
+  process.env.SCRAPER_USER_AGENT || "Mozilla/5.0 (compatible; v-merku/0.1; osobni hlidac cen)",
 );

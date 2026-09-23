@@ -20,11 +20,11 @@ import { itemsFromJson, parsePrice } from "./rohlik-parse";
 import { type ScrapedItem, type Scraper, USER_AGENT } from "./types";
 
 const SEARCH_JSON =
-  process.env.ROHLIK_SEARCH_URL ??
+  process.env.ROHLIK_SEARCH_URL ||
   "https://www.rohlik.cz/services/frontend-service/search-metadata?search={q}&offset=0&limit=25&companyId=1";
 
 const SEARCH_HTML =
-  process.env.ROHLIK_SEARCH_HTML_URL ?? "https://www.rohlik.cz/hledej?q={q}";
+  process.env.ROHLIK_SEARCH_HTML_URL || "https://www.rohlik.cz/hledej?q={q}";
 
 async function fetchText(url: string, accept: string): Promise<string> {
   const res = await fetch(url, {

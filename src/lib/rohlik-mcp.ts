@@ -32,7 +32,7 @@ import { rohlikAuth, type RohlikAuth } from "@/db/schema";
 import { itemsFromJson } from "./scrapers/rohlik-parse";
 import type { ScrapedItem } from "./scrapers/types";
 
-export const ROHLIK_MCP_URL = process.env.ROHLIK_MCP_URL ?? "https://mcp.rohlik.cz/mcp";
+export const ROHLIK_MCP_URL = process.env.ROHLIK_MCP_URL || "https://mcp.rohlik.cz/mcp";
 
 async function loadRow(db: Db): Promise<RohlikAuth | undefined> {
   return db.select().from(rohlikAuth).where(eq(rohlikAuth.id, 1)).get();

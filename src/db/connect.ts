@@ -46,7 +46,7 @@ function connectD1(endpoint: string): Db {
 }
 
 function connectSqlite(): Db {
-  const dbPath = process.env.DATABASE_PATH ?? path.join(process.cwd(), "data", "v-merku.db");
+  const dbPath = process.env.DATABASE_PATH || path.join(process.cwd(), "data", "v-merku.db");
   fs.mkdirSync(path.dirname(dbPath), { recursive: true });
   const sqlite = new Database(dbPath);
   sqlite.pragma("journal_mode = WAL");

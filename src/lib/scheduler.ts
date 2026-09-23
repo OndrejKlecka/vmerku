@@ -9,7 +9,7 @@ import cron from "node-cron";
 import type { Db } from "@/db/connect";
 import { runCheck } from "./check";
 
-const TZ = process.env.TZ ?? "Europe/Prague";
+const TZ = process.env.TZ || "Europe/Prague";
 
 export async function checkNow(db: Db, only: "daily-scrape" | "weekly-leaflet"): Promise<void> {
   const label = only === "daily-scrape" ? "e-shopy" : "letáky";

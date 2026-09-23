@@ -15,15 +15,15 @@ export async function sendMail(to: string, mail: MailPayload): Promise<void> {
 
   const transport = nodemailer.createTransport({
     host,
-    port: Number(process.env.SMTP_PORT ?? 587),
-    secure: Number(process.env.SMTP_PORT ?? 587) === 465,
+    port: Number(process.env.SMTP_PORT || 587),
+    secure: Number(process.env.SMTP_PORT || 587) === 465,
     auth: process.env.SMTP_USER
-      ? { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS ?? "" }
+      ? { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS || "" }
       : undefined,
   });
 
   await transport.sendMail({
-    from: process.env.SMTP_FROM ?? "V merku <hlidac@localhost>",
+    from: process.env.SMTP_FROM || "V merku <hlidac@localhost>",
     to,
     subject: mail.subject,
     text: mail.text,
@@ -44,7 +44,7 @@ export type SaleAlert = {
   isLowestIn6M: boolean;
 };
 
-const APP_URL = process.env.APP_URL ?? "http://localhost:3000";
+const APP_URL = process.env.APP_URL || "http://localhost:3000";
 
 function money(value: number): string {
   return `${value.toFixed(2).replace(".", ",").replace(/,00$/, "")} Kč`;
